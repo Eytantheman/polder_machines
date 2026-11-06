@@ -159,7 +159,6 @@ canvas { display:block; }
 }`;
 
 export const SITES = [
-  { href: '../world/', label: 'World' },
   { href: '../monnickendam-1826/', label: 'Monnickendam 1826' },
   { href: '../schermerhorn-1816/', label: 'Schermerhorn 1816' },
   { href: '../leeghwater-1843/', label: 'Leeghwater 1843' },

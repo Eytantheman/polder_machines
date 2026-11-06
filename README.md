@@ -11,12 +11,6 @@ Animated 3D reconstructions of Dutch water-management machines, made from techni
 | Noorder Valdeursluis, Zaandam | Canal (Zaan) | inv. 271 | [zaandam-valdeursluis/](zaandam-valdeursluis/) |
 | Middelste watermolen, Buitenveldert 1836 | Polder at the city's edge (now Zuidas) | inv. 377, J. Maurik | [buitenveldert-1836/](buitenveldert-1836/) |
 
-## The control world
-
-`world/` places all six machines in one landscape where every water level is linked. The Zuiderzee rises and falls with a tide and with storm surge. The mills and the steam engine pump four polders up into a shared boezem, and the Muiden sluice drains that boezem to sea at low tide. A controller with no operators runs it: it declares a pumping stop (maalstop) when the boezem is too full, shuts the sea gates in a surge, brakes the mills in gales, and opens inlets during drought. The Haarlemmermeer is slowly pumped dry and new land appears on its bed.
-
-Weather changes on its own (clear, cloudy, rain, storm, fog, drought) or can be set by hand. Fly to each machine from the panel or by clicking the minimap. `?speed=N` fast-forwards the simulation. The hydraulic numbers are illustrative, not calibrated.
-
 ## What moves
 
 - **Machines:**
