@@ -1,5 +1,7 @@
 # Vijzel-staartmolentje, Monnickendam 1826
 
+Source drawing: [Noord-Hollands Archief, Provinciale Atlas Noord-Holland, coll. 122 (Technische tekeningen)](https://noord-hollandsarchief.nl/beelden/beeldbank/detail/FF5BAC0AFB8E11DF9E4D523BC2E286E2/media/e25a596b-d3c3-6723-fe43-f99b3924b364?mode=detail&view=horizontal).
+
 A 3D reconstruction of a small tail-vane windmill driving an Archimedes screw (*vijzel*). It is based on the drawing *Teekening van een Vijzel-Staart-Molentje gebouwd by Monnickendam, 1826*.
 
 **Live viewer:** `index.html` (three.js). It is served through GitHub Pages once Pages is turned on for this repository.

@@ -35,6 +35,23 @@
   .toggles button[aria-pressed=true] { background:var(--accent); color:#fff; border-color:var(--accent); }
   #brake[aria-pressed=true] { background:#9a3b2e; border-color:#9a3b2e; }
   .note { font-size:11px; color:var(--muted); margin-top:12px; line-height:1.4; }
+  #meta {
+    position:absolute; left:28px; bottom:26px; max-width:min(760px, 62vw); pointer-events:none;
+    font-family:"Helvetica Neue", Helvetica, Arial, sans-serif; color:#fff;
+    text-shadow:0 1px 3px rgba(0,0,0,.55), 0 4px 28px rgba(0,0,0,.45);
+  }
+  #metaScrim { position:absolute; left:0; bottom:0; width:75vw; height:60vh; pointer-events:none;
+    background:radial-gradient(ellipse at 0% 100%, rgba(10,20,25,.42) 0%, rgba(10,20,25,.18) 45%, rgba(10,20,25,0) 72%); }
+  @media (max-width:640px) { #metaScrim { top:0; bottom:auto; width:100vw; height:45vh; background:linear-gradient(rgba(10,20,25,.4), rgba(10,20,25,0)); } }
+  #meta h2 { font-size:clamp(28px, 4.2vw, 56px); font-weight:700; line-height:1.02; letter-spacing:-.015em; margin:0 0 10px; }
+  #meta .orig { font-size:clamp(15px, 1.6vw, 21px); font-style:italic; font-weight:400; margin:0 0 14px; opacity:.95; }
+  #meta dl { display:grid; grid-template-columns:auto 1fr; gap:4px 16px; margin:0 0 14px; font-size:clamp(13px, 1.25vw, 17px); font-weight:500; }
+  #meta dt { opacity:.8; font-weight:400; }
+  #meta dd { margin:0; }
+  #meta a { pointer-events:auto; color:#fff; font-size:clamp(14px, 1.4vw, 19px); font-weight:500; text-decoration:none;
+    border-bottom:1.5px solid rgba(255,255,255,.7); padding-bottom:1px; }
+  #meta a:hover { border-bottom-color:#fff; }
+  @media (max-width:640px) { #meta { left:14px; right:14px; top:14px; bottom:auto; max-width:none; } #meta dl { display:none; } }
   #loading { position:absolute; inset:0; display:grid; place-items:center; font-size:13px; color:#fff; text-shadow:0 1px 3px rgba(0,0,0,.4); pointer-events:none; }
   #collapse { position:absolute; top:12px; right:12px; border:none; background:none; font-size:16px; cursor:pointer; color:var(--muted); display:none; }
   @media (max-width:640px) {
@@ -45,6 +62,18 @@
 </style>
 </head>
 <body>
+<div id="metaScrim"></div>
+<div id="meta">
+  <h2>Vijzel-staartmolentje<br>Monnickendam, 1826</h2>
+  <p class="orig">Teekening van een Vijzel-Staart-Molentje gebouwd by Monnickendam, 1826</p>
+  <dl>
+    <dt>Type</dt><dd>Wind-driven Archimedes screw (vijzel) with tail vane (staart)</dd>
+    <dt>Source</dt><dd>Noord-Hollands Archief, Provinciale Atlas Noord-Holland, coll. 122: Technische tekeningen</dd>
+    <dt>Scale</dt><dd>6 Rijnlandse voeten (drawn scale bar)</dd>
+    <dt>3D model</dt><dd>Eytan Mann, TU Delft, 2026</dd>
+  </dl>
+  <a href="https://noord-hollandsarchief.nl/beelden/beeldbank/detail/FF5BAC0AFB8E11DF9E4D523BC2E286E2/media/e25a596b-d3c3-6723-fe43-f99b3924b364?mode=detail&amp;view=horizontal" target="_blank" rel="noopener">View the original drawing at noord-hollandsarchief.nl &#8599;</a>
+</div>
 <div id="loading">Loading model…</div>
 <div id="panel">
   <button id="collapse" aria-label="Collapse panel">▾</button>
