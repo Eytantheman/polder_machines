@@ -467,6 +467,125 @@ function updateFlocks(dt, t) {
   }
 }
 
+// ---------- schools of jumping fish ----------
+const fishMat = new THREE.MeshStandardMaterial({ color: 0xaab4b8, roughness: 0.25, metalness: 0.75, envMapIntensity: 1.3 });
+const fishBack = new THREE.MeshStandardMaterial({ color: 0x46504a, roughness: 0.4, metalness: 0.4 });
+const FISH_BODY = new THREE.SphereGeometry(1, 14, 8).scale(0.2, 0.055, 0.045);    // 40 cm, roach/bream-like
+const FISH_TAIL = (() => {
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute([-0.17, 0, 0, -0.27, 0.07, 0, -0.27, -0.07, 0], 3));
+  g.computeVertexNormals(); return g;
+})();
+const FISH_FIN = (() => {
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute([0.04, 0.05, 0, -0.06, 0.05, 0, -0.03, 0.1, 0], 3));
+  g.computeVertexNormals(); return g;
+})();
+function makeFish() {
+  const g = new THREE.Group();
+  const body = new THREE.Mesh(FISH_BODY, fishMat);
+  const back = new THREE.Mesh(FISH_FIN, fishBack); back.material.side = THREE.DoubleSide;
+  const tail = new THREE.Mesh(FISH_TAIL, fishBack);
+  g.add(body, back, tail); g.userData.tail = tail;
+  g.scale.setScalar(rand(0.75, 1.25));
+  return g;
+}
+const splashMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.6, depthWrite: false, side: THREE.DoubleSide });
+const RING = new THREE.RingGeometry(0.85, 1, 32).rotateX(-Math.PI / 2);
+const DROP = new THREE.SphereGeometry(0.018, 5, 4);
+const splashes = [];
+function splash(pos, size = 1) {
+  const ring = new THREE.Mesh(RING, splashMat.clone());
+  ring.position.copy(pos).setY(pos.y + 0.01);
+  const drops = [];
+  for (let i = 0; i < 10; i++) {
+    const d = new THREE.Mesh(DROP, splashMat.clone()); d.position.copy(pos);
+    const a = rand(0, 6.28), sp = rand(0.4, 1.2) * size;
+    d.userData.v = new THREE.Vector3(Math.cos(a) * sp, rand(1.2, 2.4) * size, Math.sin(a) * sp);
+    drops.push(d); scene.add(d);
+  }
+  scene.add(ring);
+  splashes.push({ ring, drops, t: 0, y: pos.y, size });
+}
+function updateSplashes(dt) {
+  for (let i = splashes.length - 1; i >= 0; i--) {
+    const s = splashes[i]; s.t += dt;
+    const r = 0.08 + s.t * 0.9 * s.size;
+    s.ring.scale.set(r, 1, r);
+    s.ring.material.opacity = Math.max(0, 0.55 * (1 - s.t / 1.6));
+    for (const d of s.drops) {
+      d.userData.v.y -= 9.81 * dt; d.position.addScaledVector(d.userData.v, dt);
+      d.visible = d.position.y > s.y;
+    }
+    if (s.t > 1.6) {
+      scene.remove(s.ring); s.ring.material.dispose();
+      for (const d of s.drops) { scene.remove(d); d.material.dispose(); }
+      splashes.splice(i, 1);
+    }
+  }
+}
+const schools = [];
+function spawnSchool() {
+  camBasis();
+  let P = null, region = null;
+  for (let k = 0; k < 30 && !region; k++) {
+    const D = rand(14, 45);
+    P = camera.position.clone().addScaledVector(camFwd, D).addScaledVector(camRight, rand(-0.45, 0.45) * D);
+    region = regionOf(P.x, P.z);
+    if (region === 'upper' && P.x > 0.2) region = null;            // keep clear of the dike edge
+    if (region === 'lower' && P.x < 3.2) region = null;
+  }
+  if (!region) return;
+  const y0 = region === 'upper' ? 0.81 : 0;
+  const heading = rand(0, Math.PI * 2);
+  const hd = new THREE.Vector3(Math.cos(heading), 0, Math.sin(heading));
+  const n = Math.floor(rand(3, 10));
+  const fish = [];
+  let delay = 0;
+  for (let i = 0; i < n; i++) {
+    const f = makeFish(); f.visible = false; scene.add(f);
+    const start = P.clone().add(new THREE.Vector3(rand(-1.5, 1.5), 0, rand(-1.5, 1.5)));
+    start.addScaledVector(hd, i * rand(0.3, 0.7));              // the school moves along as it jumps
+    start.y = y0;
+    const len = rand(0.7, 1.6), h = rand(0.25, 0.75);
+    fish.push({ f, start, dir: hd.clone().applyAxisAngle(axY, rand(-0.35, 0.35)), len, h,
+                dur: 2 * Math.sqrt(2 * h / 9.81), delay, t: -1, splashed: false });
+    delay += rand(0.08, 0.6);
+    if (Math.random() < 0.3) delay += rand(0.6, 1.4);            // a straggler or a second burst
+  }
+  schools.push({ fish, t: 0, end: delay + 2.5 });
+}
+let nextSchool = 4;
+function updateFish(dt) {
+  nextSchool -= dt;
+  if (nextSchool <= 0) { spawnSchool(); nextSchool = rand(9, 24); }
+  for (let i = schools.length - 1; i >= 0; i--) {
+    const s = schools[i]; s.t += dt;
+    for (const j of s.fish) {
+      const tt = s.t - j.delay;
+      if (tt < 0) continue;
+      if (j.t < 0) { j.t = 0; j.f.visible = true; splash(j.start, 0.7); }
+      j.t = tt;
+      const u = j.t / j.dur;
+      if (u >= 1) {
+        if (!j.splashed) { j.splashed = true; j.f.visible = false; splash(j.start.clone().addScaledVector(j.dir, j.len), 0.9); }
+        continue;
+      }
+      // ballistic arc; the fish pitches along its path and flicks its tail
+      const p = j.start.clone().addScaledVector(j.dir, j.len * u);
+      p.y = j.start.y + 4 * j.h * u * (1 - u) - 0.03;
+      j.f.position.copy(p);
+      const slope = Math.atan2(4 * j.h * (1 - 2 * u), j.len);
+      j.f.rotation.set(0, -Math.atan2(j.dir.z, j.dir.x), 0);
+      j.f.rotateZ(slope);
+      j.f.rotateX(Math.sin(j.t * 9) * 0.15);
+      j.f.userData.tail.rotation.y = Math.sin(j.t * 30) * 0.5;
+    }
+    if (s.t > s.end) { for (const j of s.fish) scene.remove(j.f); schools.splice(i, 1); }
+  }
+  updateSplashes(dt);
+}
+
 // ---------- loop ----------
 const clock = new THREE.Clock();
 let waterTime = 0, simTime = 0;
@@ -475,6 +594,7 @@ function frame() {
   simTime += dt;
   updateDebris(dt, simTime);
   updateFlocks(dt, simTime);
+  updateFish(dt);
   const target = stepRotor(dt);
   if (nodes.Rotor_spin) {
     spin(nodes.Rotor_spin, axX, -angle);                       // anticlockwise seen from the front
