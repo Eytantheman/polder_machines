@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Stoomwerktuig De Leeghwater, 1843</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script type="importmap">
+{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+               "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/" } }
+</script>
+</head>
+<body>
+<script type="module">
+import { start, THREE, M, mat, box, beam, cyl, ring, rand, Eased, beaufort } from '../common/engine.js';
+import * as A from '../common/assets.js';
+
+const Y_LAKE = -1.0, Y_CANAL = 0.8, DIKE = 1.6;
+const R_TOWER = 9, H_TOWER = 15, R_PIVOT = 9.3, R_PUMP = 14, R_CAP = 2.3, N_PUMPS = 11;
+const V = (x, y, z) => new THREE.Vector3(x, y, z);
+let towerFront;
+
+start({
+  slug: 'leeghwater-1843',
+  meta: {
+    title: 'De Leeghwater<br>Haarlemmermeer, 1843',
+    original: 'Kaart III. Het stoomwerktuig de Leeghwater, bij de Kaag (1 October 1843)',
+    rows: [['Type', 'Steam pumping engine with eleven balance-beam pumps'],
+           ['Series', 'Kaarten van stoomgemalen te Spaarndam, de Leeghwater, de Cruquius en de Lynden'],
+           ['Printer', 'Steendruk Huart en E. Spanier, ’s-Gravenhage, 1843–1852'],
+           ['Source', 'Noord-Hollands Archief, Provinciale Atlas Noord-Holland, coll. 122, inv. 96'],
+           ['Licence', 'Public domain']],
+    link: 'https://noord-hollandsarchief.nl/beelden/beeldbank/detail/D1AA71A93C2B42C484CA740FC53DD118',
+  },
+  panel: { title: 'De Leeghwater', sub: 'Haarlemmermeer, 1843 · drag to orbit, scroll to zoom',
+    note: 'One huge steam cylinder lifts the central cap, which rocks eleven balance beams. Each stroke, the pumps lift lake water up into the ring canal (Ringvaart). With the cutaway on, part of the tower wall is removed so you can see the cylinder.' },
+  controls: [
+    { key: 'steam', label: 'Steam pressure', min: 0, max: 7, step: 0.1, value: 4.5, unit: 'strokes/min', fmt: v => v.toFixed(1), hint: v => v < 0.3 ? 'Fires banked, engine idle' : v > 6 ? 'Full load (as in the 1849 trials)' : 'Working' },
+    { key: 'wind', label: 'Wind speed', min: 0, max: 20, step: 0.1, value: 7, unit: 'm/s', hint: beaufort }],
+  buttons: [{ key: 'stop', label: 'Stop engine', pressed: false, warn: true },
+            { key: 'cut', label: 'Cutaway', pressed: true, onToggle: (on) => { towerFront.visible = !on; } }],
+  camera: { pos: [-44, 17, 42], target: [-5.5, 8, -5.8], max: 300 },
+  shadowSize: 40,
+  waters: [
+    { x: [-900, -24], z: [-900, 900], y: Y_LAKE, color: 0x14302e, size: 26, rough: 1.4 },
+    { x: [24, 62], z: [-900, 900], y: Y_CANAL, color: 0x13302a },
+  ],
+  exclusions: [[-26, 26, -30, 30]],
+  ambient: { fishCenter: [-40, 0, 0] },
+  build,
+});
+
+function build(ctx) {
+  const { scene } = ctx;
+  const stone = M.stone(), brick = M.brick(), iron = M.iron();
+  // ---------------- land: dike with the station, polder beyond the canal
+  box(scene, M.clay(), -24, 24, -2, DIKE, -900, 900);
+  box(scene, M.clay(), 62, 70, -2, 1.8, -900, 900);
+  box(scene, mat(0x3a3d40, 0.9, 0, 0.1), 64, 68, 1.8, 1.84, -900, 900);
+  for (let x = 70; x < 800; x += 120) for (let z = -880; z < 880; z += 40) A.field(ctx, x, Math.min(x + 115, 820), z, z + 37, -0.3, 0x5d7340, 1);
+
+  // ---------------- engine house: round tower with a cutaway segment
+  const wallM = mat(0xb7ad9c, 0.85, 0, 0.25, 2.5, { side: THREE.DoubleSide });
+  const seg = (a0, len) => { const m = new THREE.Mesh(new THREE.CylinderGeometry(R_TOWER, R_TOWER + 0.4, H_TOWER, 48, 1, true, a0, len), wallM);
+    m.position.y = DIKE + H_TOWER / 2; m.castShadow = m.receiveShadow = true; scene.add(m); return m; };
+  const cutA = Math.PI * 1.47, cutL = Math.PI * 0.55;              // theta from +z toward +x; faces the default camera (-x, +z)
+  seg(cutA + cutL, Math.PI * 2 - cutL); towerFront = seg(cutA, cutL); towerFront.visible = false;
+  // parapet with crenellations and string courses
+  ring(scene, stone, V(0, DIKE + H_TOWER + 0.4, 0), V(0, 1, 0), R_TOWER - 0.4, R_TOWER + 0.6, 0.8, 48);
+  for (let i = 0; i < 40; i++) { const a = i / 40 * Math.PI * 2; const b = box(scene, stone, -0.45, 0.45, 0, 1.0, -0.35, 0.35);
+    b.position.set(Math.cos(a) * (R_TOWER + 0.1), DIKE + H_TOWER + 1.0, Math.sin(a) * (R_TOWER + 0.1)); b.rotation.y = -a; }
+  for (const y of [DIKE + 1, DIKE + 6]) ring(scene, stone, V(0, y, 0), V(0, 1, 0), R_TOWER + 0.2, R_TOWER + 0.7, 0.4, 48);
+  // lancet windows (dark insets)
+  for (let i = 0; i < 12; i++) { const a = i / 12 * Math.PI * 2 + 0.13; const th = ((Math.PI / 2 - a) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI); if (th > cutA - 0.15 && th < cutA + cutL + 0.15) continue;
+    const w = box(scene, mat(0x2a2f33, 0.3, 0.3, 0), -0.7, 0.7, 0, 4.2, -0.1, 0.1); w.position.set(Math.cos(a) * (R_TOWER + 0.32), DIKE + 7.5, Math.sin(a) * (R_TOWER + 0.32)); w.rotation.y = -a + Math.PI / 2; }
+  // roof deck and floors inside
+  ring(scene, mat(0x5a5048, 0.8, 0, 0.2), V(0, DIKE + H_TOWER - 0.2, 0), V(0, 1, 0), R_CAP + 0.6, R_TOWER, 0.3, 48);
+  ring(scene, mat(0x6f665c, 0.9, 0, 0.3), V(0, DIKE + 0.2, 0), V(0, 1, 0), 0.01, R_TOWER, 0.4, 48);
+  // the steam cylinder (dia. ~3.6 m) on its bed, valve gear, and a staircase column
+  cyl(scene, iron, [0, DIKE + 0.4, 0], [0, DIKE + 2.4, 0], 3.2, 24);
+  cyl(scene, mat(0x3b4247, 0.45, 0.7, 0.05), [0, DIKE + 2.4, 0], [0, DIKE + 9.4, 0], 1.95, 32);
+  for (let i = 0; i < 6; i++) { const a = i / 6 * Math.PI * 2; cyl(scene, M.oak(), [Math.cos(a) * 3.6, DIKE + 0.4, Math.sin(a) * 3.6], [Math.cos(a) * 3.6, DIKE + H_TOWER - 0.2, Math.sin(a) * 3.6], 0.25, 8); }
+  cyl(scene, mat(0x6b7378, 0.4, 0.8, 0.02), [2.6, DIKE + 2.4, 0], [2.6, DIKE + 8, 0], 0.35, 12);       // valve chest
+  // moving parts: piston rod + great cap (kap), beams, pump rods
+  const capG = new THREE.Group(); scene.add(capG);
+  cyl(capG, mat(0xa9b0b5, 0.25, 0.9, 0.02), [0, DIKE + 9.4, 0], [0, DIKE + H_TOWER + 1.5, 0], 0.32, 12);
+  cyl(capG, iron, [0, DIKE + H_TOWER + 1.5, 0], [0, DIKE + H_TOWER + 2.3, 0], R_CAP, 24);
+  ring(capG, iron, V(0, DIKE + H_TOWER + 1.9, 0), V(0, 1, 0), R_CAP - 0.1, R_CAP + 0.25, 0.25, 32);
+  // pump basin (ring trough) with water at canal level, connected to the canal
+  ring(scene, stone, V(0, DIKE + 0.6, 0), V(0, 1, 0), R_PUMP + 2.0, R_PUMP + 2.6, 1.6, 64);
+  const basin = new THREE.Mesh(new THREE.RingGeometry(R_TOWER + 0.7, R_PUMP + 2.0, 64).rotateX(-Math.PI / 2), mat(0x1a3a36, 0.06, 0.2, 0, 1, { envMapIntensity: 1.5 }));
+  basin.position.y = DIKE + 0.9; scene.add(basin);
+  for (const s of [-1, 1]) box(scene, stone, R_PUMP + 1.5, 24, DIKE - 0.2, DIKE + 1.4, s * 3, s * 3 + s * 0.6);   // outlet channel walls
+  const outlet = new THREE.Mesh(new THREE.BoxGeometry(24 - R_PUMP - 1.5, 0.02, 6), basin.material); outlet.position.set((R_PUMP + 1.5 + 24) / 2, DIKE + 0.9, 0); scene.add(outlet);
+  ctx.smoke({ pos: V(24.5, Y_CANAL + 0.3, 0), count: 90, rate: () => 4 + engine.v * 6, life: 1.4, size0: 0.4, size1: 2.2, color: 0xffffff, opacity: 0.5, vel: V(1.5, 0.8, 0), gravity: 3, drift: 0, spread: 2, jitter: 2.5 });
+  A.foam(ctx, 28, 0, Y_CANAL + 0.02, 3);
+  // lake-side intake arches
+  for (let i = -2; i <= 2; i++) { const a = Math.PI + i * 0.22;
+    const ar = box(scene, mat(0x23292c, 0.3, 0.2, 0), -1.2, 1.2, -0.6, 2.0, -0.4, 0.4); ar.position.set(Math.cos(a) * (R_PUMP + 2.7), Y_LAKE + 0.4, Math.sin(a) * (R_PUMP + 2.7)); ar.rotation.y = -a + Math.PI / 2; }
+
+  const beams = [];
+  for (let i = 0; i < N_PUMPS; i++) {
+    const a = Math.PI * 0.9 + (i / (N_PUMPS - 1)) * Math.PI * 1.55;   // leave the boiler side (-z) free
+    const dir = V(Math.cos(a), 0, Math.sin(a));
+    const pivot = new THREE.Group(); pivot.position.set(dir.x * R_PIVOT, DIKE + H_TOWER + 1.6, dir.z * R_PIVOT);
+    pivot.rotation.y = -a; scene.add(pivot);
+    const rock = new THREE.Group(); pivot.add(rock);
+    // beam in local X (outward), double cast-iron plates
+    for (const s of [-0.22, 0.22]) box(rock, iron, -(R_PIVOT - R_CAP - 0.2), R_PUMP - R_PIVOT + 0.4, -0.55, 0.55, s - 0.06, s + 0.06);
+    box(rock, iron, -0.3, 0.3, -0.75, 0.75, -0.3, 0.3);
+    box(scene, stone, -0.6, 0.6, DIKE + H_TOWER + 0.8, DIKE + H_TOWER + 1.4, -0.6, 0.6).position.set(dir.x * R_PIVOT, DIKE + H_TOWER + 1.1, dir.z * R_PIVOT);
+    // pump barrel (dia. 1.6 m) standing in the basin, with its rod
+    const pb = cyl(scene, mat(0x2e3337, 0.5, 0.7, 0.05), [dir.x * R_PUMP, Y_LAKE - 2, dir.z * R_PUMP], [dir.x * R_PUMP, DIKE + 1.4, dir.z * R_PUMP], 0.85, 20);
+    ring(scene, iron, V(dir.x * R_PUMP, DIKE + 1.4, dir.z * R_PUMP), V(0, 1, 0), 0.8, 1.05, 0.15, 20);
+    const rod = new THREE.Group(); scene.add(rod);
+    cyl(rod, mat(0xa9b0b5, 0.25, 0.9, 0.02), [0, 0, 0], [0, -(H_TOWER - 0.4), 0], 0.13, 8);
+    const sprayE = ctx.smoke({ pos: V(dir.x * R_PUMP, DIKE + 1.5, dir.z * R_PUMP), count: 36, rate: () => 0, life: 1.1, size0: 0.3, size1: 1.3,
+      color: 0xffffff, opacity: 0.6, vel: dir.clone().multiplyScalar(0.6).setY(1.4), gravity: 4, drift: 0, spread: 1.3, jitter: 0.5 });
+    beams.push({ rock, rod, dir, a, sprayE, phase: 0 });
+  }
+
+  // boiler house and chimney (litho: tall slender stack beside the tower)
+  const bh = new THREE.Group(); scene.add(bh);
+  box(bh, wallM, -8, 8, DIKE, DIKE + 7.5, -22, -10);
+  const roofS = new THREE.Shape([new THREE.Vector2(-8.6, 0), new THREE.Vector2(8.6, 0), new THREE.Vector2(0, 4)]);
+  const roof = new THREE.Mesh(new THREE.ExtrudeGeometry(roofS, { depth: 12.6, bevelEnabled: false }).translate(0, 0, -22.3), mat(0x3a4044, 0.6, 0.3, 0.1));
+  roof.position.y = DIKE + 7.5; roof.castShadow = true; bh.add(roof);
+  for (let x = -6; x <= 6; x += 3) box(bh, mat(0x2a2f33, 0.3, 0.3, 0), x - 0.6, x + 0.6, DIKE + 2, DIKE + 5.5, -10.05, -9.95);
+  const stack = A.chimney(ctx, 0, -27, 34, { y: DIKE, r: 1.8, mat: mat(0x8f5a42, 0.9, 0, 0.3, 6), rate: () => 1 + engine.v * 2.2, color: 0x2e2b29, opacity: 0.55, size: 22, rise: 4 });
+  const exhaust = ctx.smoke({ pos: V(0, DIKE + H_TOWER + 3, 0), count: 80, rate: () => 0, life: 2.4, size0: 0.8, size1: 5, color: 0xf4f4f4, opacity: 0.6, vel: V(0, 3, 0), drift: 0.12, jitter: 0.6 });
+  // coal heap and a narrow-gauge wagon
+  const coal = new THREE.Mesh(new THREE.ConeGeometry(3.5, 2.5, 10), mat(0x1a1a1a, 0.95, 0, 0.4, 5)); coal.position.set(12, DIKE + 1.2, -18); scene.add(coal);
+
+  // ---------------- around the lake: nature, old and new technology, pollution
+  A.waterfowl(ctx, [-120, -30, -60, 60], Y_LAKE, 6, 'coot');
+  A.waterfowl(ctx, [-90, -30, -40, 40], Y_LAKE, 4, 'swan');
+  A.waterfowl(ctx, [26, 60, -80, 80], Y_CANAL, 6, 'duck');
+  A.heron(ctx, -25.5, 18, Y_LAKE - 0.35, 1.2);
+  A.reeds(ctx, [[-24.5, -200, -24.5, -32], [-24.5, 32, -24.5, 200], [61.5, -200, 61.5, 200]], -0.3);
+  A.cows(ctx, [80, 160, 20, 90], -0.3, 10);
+  A.trees(ctx, [[66, -40, 1.8, 1], [66, -30, 1.8, 0.9], [66, -20, 1.8, 1.1], [66, 40, 1.8, 1], [66, 52, 1.8, 1]], 'poplar');
+  A.ship(ctx, 'tjalk', [[-80, 0, -300], [-60, 0, 0], [-90, 0, 300], [-140, 0, 0]], Y_LAKE, 2.2);
+  A.trekschuit(ctx, [[45, 0, -400], [45, 0, 400]], Y_CANAL, 1.8, 20.5, 1.4);
+  A.kitesurfer(ctx, [-260, -80, -120, 120], Y_LAKE);
+  A.kitesurfer(ctx, [-320, -120, -200, 60], Y_LAKE);
+  A.airplane(ctx, { landing: true, heading: Math.PI * 0.5, offset: [-160, -60], alt0: 320, alt1: 60, speed: 75, every: [18, 35], first: [6, 10], size: 1.2 });
+  A.airplane(ctx, { alt: [900, 1200], every: [40, 70] });
+  A.dataCenter(ctx, 140, -120, 90, 40, 0.1);
+  A.dataCenter(ctx, 260, -60, 70, 36, -0.05);
+  A.windTurbines(ctx, [[330, -300], [330, -160], [330, -20], [330, 120], [330, 260]], { h: 100, r: 55 });
+  A.pylons(ctx, [[110, -500], [110, -250], [110, 0], [110, 250], [110, 500]], 42);
+  A.drone(ctx, { center: [0, 0, 0], radius: 26, h: 24 });
+  A.traffic(ctx, [[66, 0, -900], [66, 0, 900]], 1.84, 8, 22, { lanes: [-0.9, 0.9] });
+  A.smallMill(ctx, -40, -260, Y_LAKE + 0.8, 1, 'polder', 0);          // the windmills this engine replaced
+  A.oilSlick(ctx, -45, 30, Y_LAKE, 7);
+  A.foam(ctx, -25.6, -34, Y_LAKE + 0.02, 4.5, 0xeeeadf);               // PFAS-like foam against the dike
+  A.plasticRaft(ctx, 40, -50, Y_CANAL, 2.2);
+  A.balloon(ctx, { center: [0, 0, 0], h: 140, z: -200, color: 0x1f6aa5 });
+
+  // ---------------- engine cycle
+  const engine = new Eased(0.6, 0.9, 1.8);
+  let phase = 0, prevLift = 0, volume = 0;
+  const STROKE = 3.0;                                                    // piston stroke (m)
+  const inner = R_PIVOT - R_CAP + 0.1, outer = R_PUMP - R_PIVOT;
+  return {
+    update(dt, t) {
+      const spm = engine.step(ctx.state.stop ? 0 : ctx.state.steam, dt, ctx.state.stop);
+      phase += spm / 60 * dt;
+      // up-stroke by steam (quick), down-stroke by weight (slower, pumping): asymmetric cycle
+      const p = phase % 1, lift = p < 0.38 ? Math.sin(p / 0.38 * Math.PI / 2) : Math.cos((p - 0.38) / 0.62 * Math.PI / 2);
+      const capY = lift * STROKE;
+      capG.position.y = capY - STROKE * 0.5;
+      const ang = -Math.atan2(capY - STROKE * 0.5, inner);              // cap up -> inner end up -> outer end down
+      for (const b of beams) {
+        b.rock.rotation.z = ang;                                          // inner end up -> outer end down
+        const tip = new THREE.Vector3(outer, 0, 0).applyAxisAngle(new THREE.Vector3(0, 0, 1), ang);
+        b.rod.position.set(b.dir.x * (R_PIVOT + tip.x), DIKE + H_TOWER + 1.6 + tip.y, b.dir.z * (R_PIVOT + tip.x));
+        b.sprayE.rate = () => (p > 0.42 && p < 0.92 ? 30 * Math.min(1, spm / 3) : 0);   // pumps discharge on the down-stroke of the cap
+      }
+      if (prevLift < 0.97 && lift >= 0.97 && spm > 0.3) exhaust.acc += 40;            // exhaust puff at the top of the stroke
+      prevLift = lift;
+      volume += spm / 60 * dt * N_PUMPS * Math.PI * 0.8 * 0.8 * STROKE * outer / inner;
+    },
+    readouts: () => {
+      const spm = engine.v, perStroke = N_PUMPS * Math.PI * 0.64 * STROKE * outer / inner;
+      return [['Strokes per minute', spm.toFixed(1)], ['Lift per stroke', perStroke.toFixed(0) + ' m³'],
+              ['Discharge', (spm * perStroke).toFixed(0) + ' m³/min'], ['Pumped since you arrived', Math.round(volume).toLocaleString('en') + ' m³']];
+    },
+  };
+}
+</script>
+</body>
+</html>

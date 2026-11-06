@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Zeesluis te Muiden, 1811–1812</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script type="importmap">
+{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+               "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/" } }
+</script>
+</head>
+<body>
+<script type="module">
+import { start, THREE, M, mat, box, beam, cyl, rand, beaufort } from '../common/engine.js';
+import * as A from '../common/assets.js';
+import { Sequence, ease } from '../common/lock.js';
+
+const Y_SEA = 0.5, Y_RIV = -0.1, TOP = 2.2;            // Zuiderzee, river Vecht, quay level
+const HW = 3.5, XG = 17, XB = -21.5;                    // chamber half width, gate heads at +-XG, bridge
+const V = (x, y, z) => new THREE.Vector3(x, y, z);
+let seq;
+
+start({
+  slug: 'muiden-zeesluis',
+  meta: {
+    title: 'Zeesluis<br>Muiden, 1811–1812',
+    original: 'Ontwerptekeningen voor de vernieuwing in 1811 en 1812 van de zeesluis te Muiden: doorsneden, plattegrond en ophaalbrug; doorsneden van een houten schutsluis met brug',
+    rows: [['Type', 'Timber sea lock with mitre gates and a drawbridge, between the Zuiderzee and the Vecht'],
+           ['Set', '8 coloured design drawings, numbered I–VIII'],
+           ['Source', 'Noord-Hollands Archief, Provinciale Atlas Noord-Holland, coll. 122, inv. 359'],
+           ['Place', 'Muiden']],
+    link: 'https://noord-hollandsarchief.nl/beelden/beeldbank/detail/9487D8375977473BBD86AF30E3403B6D',
+  },
+  panel: { title: 'Zeesluis Muiden', sub: 'Zuiderzee / Vecht · drag to orbit, scroll to zoom',
+    note: 'A fishing botter locks through from the Zuiderzee into the Vecht. The sea gates close, the chamber drains to river level, the bridge lifts, and the inner gates open. The wind shapes the sea and the sailing.' },
+  controls: [{ key: 'wind', label: 'Wind speed', min: 0, max: 20, step: 0.1, value: 8, unit: 'm/s', hint: beaufort }],
+  buttons: [{ label: 'Operate lock now', onClick: () => seq.trigger() }],
+  camera: { pos: [-30, 12, 26], target: [-5.4, 1.5, -3.7], max: 400 },
+  shadowSize: 40,
+  waters: [
+    { x: [XG + 0.2, 2500], z: [-2500, 2500], y: Y_SEA, color: 0x1a3a40, size: 18, rough: 2.2, speed: 1.4 },
+    { x: [-900, -XG - 0.2], z: [-14, 14], y: Y_RIV, color: 0x13302a },
+  ],
+  exclusions: [[XG - 1, 30, -HW - 1, HW + 1], [-30, -XG + 1, -HW - 1, HW + 1]],
+  ambient: { whale: true, whaleCenter: [110, 0, 0], fishCenter: [60, 0, 20] },
+  build,
+});
+
+function build(ctx) {
+  const { scene } = ctx;
+  const oak = M.oak(), old = M.oldOak(), iron = M.iron();
+  // ---------------- land: sea dike, quays round the lock, river banks with the town
+  box(scene, M.clay(), XG, 26, -3, TOP + 0.4, HW + 0.4, 900); box(scene, M.clay(), XG, 26, -3, TOP + 0.4, -900, -HW - 0.4);
+  box(scene, mat(0x7d7a74, 0.9, 0, 0.35, 3), 25, 29, -3, Y_SEA + 0.3, -900, 900).position.y -= 0;       // stone revetment
+  for (const s of [-1, 1]) box(scene, M.grass(), -XG - 0.4, XG + 0.4, -3, TOP, s > 0 ? HW + 0.3 : -40, s > 0 ? 40 : -HW - 0.3);
+  for (const s of [-1, 1]) box(scene, M.grass(), -30, -XG - 0.4, -3, TOP, s > 0 ? HW + 0.3 : -40, s > 0 ? 40 : -HW - 0.3);
+  for (const s of [-1, 1]) box(scene, M.grass(), -900, -30, -3, 1.6, s > 0 ? 14 : -400, s > 0 ? 400 : -14);
+  for (const s of [-1, 1]) box(scene, M.grass(), -30, -XG - 0.4, -3, 1.6, s > 0 ? 40 : -400, s > 0 ? 400 : -40);
+  box(scene, M.grass(), -XG, XG + 26, -3, 1.6, 40, 400); box(scene, M.grass(), -XG, XG + 26, -3, 1.6, -400, -40);
+  box(scene, mat(0x8a8478, 0.9, 0, 0.3, 2), 19.5, 22.5, TOP + 0.4, TOP + 0.45, HW + 0.4, 900);
+  box(scene, mat(0x8a8478, 0.9, 0, 0.3, 2), 19.5, 22.5, TOP + 0.4, TOP + 0.45, -900, -HW - 0.4);
+  // outer channel to the sea and the river mouth: water between the quays
+  const chanM = mat(0x173638, 0.06, 0.2, 0, 1, { envMapIntensity: 1.5 });
+
+  // ---------------- the timber lock chamber: sheet piling, posts and capping beams
+  for (const s of [-1, 1]) {
+    box(scene, mat(0x6a5a48, 0.85, 0, 0.35, 5), -XG - 6, XG + 9, -2.5, TOP, s * HW - 0.15 + s * 0.15, s * HW + 0.15 + s * 0.15);
+    for (let x = -XG - 6; x <= XG + 9; x += 2) cyl(scene, old, [x, -2.5, s * (HW - 0.05)], [x, TOP + 0.25, s * (HW - 0.05)], 0.17, 8);
+    box(scene, oak, -XG - 6, XG + 9, TOP, TOP + 0.3, s * HW - 0.25, s * HW + 0.35 * s + (s < 0 ? 0 : 0));
+  }
+  box(scene, old, -XG - 6, XG + 9, -2.6, -2.4, -HW, HW);                                        // floor
+  for (const x of [-XG - 0.3, XG - 0.3]) box(scene, oak, x, x + 0.6, -2.4, -1.6, -HW, HW);         // sills (slagdorpels)
+  const chamber = new THREE.Mesh(new THREE.BoxGeometry(2 * XG + 1, 0.02, 2 * HW - 0.1), chanM); scene.add(chamber);
+  const outerCh = new THREE.Mesh(new THREE.BoxGeometry(9, 0.02, 2 * HW - 0.1), chanM); outerCh.position.set(XG + 4.7, Y_SEA, 0); scene.add(outerCh);
+  const riverCh = new THREE.Mesh(new THREE.BoxGeometry(6, 0.02, 2 * HW - 0.1), chanM); riverCh.position.set(-XG - 3.4, Y_RIV, 0); scene.add(riverCh);
+
+  // mitre gates (puntdeuren) with balance beams; both pairs point toward the higher water (+x)
+  function leaf(xh, side) {
+    const pivot = new THREE.Group(); pivot.position.set(xh, 0, side * (HW - 0.2)); scene.add(pivot);
+    const L = 3.75;
+    box(pivot, mat(0x5a4a38, 0.85, 0, 0.3, 5), 0, L, -2.3, TOP - 0.1, -0.14, 0.14);
+    for (const y of [-1.6, -0.4, 0.8, 1.9]) box(pivot, oak, 0, L, y - 0.12, y + 0.12, -0.2, 0.2);
+    beam(pivot, oak, V(0.2, -2.0, 0), V(L - 0.2, 1.8, 0), 0.16);
+    cyl(pivot, oak, [0, -2.3, 0], [0, TOP + 0.6, 0], 0.22, 10);
+    beam(pivot, oak, V(0, TOP + 0.45, 0), V(-6.5, TOP + 0.9, 0), 0.3);                         // balance beam (balk) over the quay
+    box(pivot, iron, L - 0.9, L - 0.3, -1.8, -1.2, -0.17, 0.17);                                  // sluice paddle (rinket)
+    const closed = side > 0 ? 65 * Math.PI / 180 : -65 * Math.PI / 180, open = side > 0 ? Math.PI - 0.06 : -Math.PI + 0.06;
+    return (k) => { pivot.rotation.y = closed + (open - closed) * k; };
+  }
+  const seaGates = [leaf(XG, 1), leaf(XG, -1)], innerGates = [leaf(-XG, 1), leaf(-XG, -1)];
+  const setSea = (k) => seaGates.forEach(f => f(k)), setInner = (k) => innerGates.forEach(f => f(k));
+
+  // drawbridge (ophaalbrug) with portal frame and balance beams (wippen)
+  const bridgeLeaf = new THREE.Group(); bridgeLeaf.position.set(XB, TOP + 0.1, HW + 1.0); scene.add(bridgeLeaf);
+  const deckL = 2 * HW + 2.0;
+  box(bridgeLeaf, mat(0x6e5a44, 0.85, 0, 0.3, 4), -1.7, 1.7, -0.15, 0.15, -deckL, 0);
+  for (const s of [-1, 1]) box(bridgeLeaf, M.white(), s * 1.6 - 0.08, s * 1.6 + 0.08, 0.15, 1.1, -deckL, 0);
+  for (const sx of [-1.9, 1.9]) cyl(scene, M.white(), [XB + sx, TOP, HW + 1.9], [XB + sx, TOP + 8.6, HW + 1.9], 0.22, 10);
+  box(scene, M.white(), XB - 2.2, XB + 2.2, TOP + 8.3, TOP + 8.8, HW + 1.7, HW + 2.1);
+  const wip = new THREE.Group(); wip.position.set(XB, TOP + 8.9, HW + 1.9); scene.add(wip);
+  for (const sx of [-1.4, 1.4]) box(wip, M.white(), sx - 0.12, sx + 0.12, -0.15, 0.15, -deckL - 0.9, 5.5);
+  for (let z = -deckL; z < 5.5; z += 1.6) box(wip, M.white(), -1.4, 1.4, -0.08, 0.08, z, z + 0.15);
+  box(wip, mat(0x3a3a3a, 0.8, 0.2, 0.1), -1.6, 1.6, -0.9, -0.15, 3.8, 5.6);                       // counterweight box
+  const chains = new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints([V(), V(), V(), V()]), new THREE.LineBasicMaterial({ color: 0x1b1c1e }));
+  scene.add(chains);
+  const setBridge = (k) => {
+    const a = k * 1.25; bridgeLeaf.rotation.x = a; wip.rotation.x = a;
+    chains.geometry.setFromPoints([wip.localToWorld(V(-1.4, 0, -deckL - 0.7)), bridgeLeaf.localToWorld(V(-1.5, 0.2, -deckL + 0.2)),
+      wip.localToWorld(V(1.4, 0, -deckL - 0.7)), bridgeLeaf.localToWorld(V(1.5, 0.2, -deckL + 0.2))]);
+  };
+  // lock keeper's house
+  A.zaanHouse(ctx, -6, -16, 0, 6, 7, 3.2, 0x8f4a36, TOP);
+
+  // ---------------- the vessel and the lock cycle
+  const boat = A.botter(ctx, null, 0, 0, 0x6e3420, 0.62); boat.visible = false;
+  const pIn = new A.Path([[150, 0, 40], [70, 0, 12], [32, 0, 0], [XG + 3, 0, 0]]);
+  const pOut = new A.Path([[-2, 0, 0], [-XG - 6, 0, 0], [-60, 0, 2], [-140, 0, -4]]);
+  let level = Y_SEA, boatX = 0;
+  const putBoat = (P, u, yfn) => { P.at(P.len * u, boat.position); const d = P.dir(P.len * u); boat.rotation.y = Math.atan2(-d.z, d.x);
+    boat.position.y = yfn(boat.position.x) + Math.sin(ctx.time * 1.2) * 0.04; };
+  const yAt = (x) => x > XG ? Y_SEA : x < -XG ? Y_RIV : level;
+  const sprayIn = ctx.smoke({ pos: V(-XG + 0.6, Y_RIV + 0.3, 0), count: 80, rate: () => 0, life: 1.2, size0: 0.3, size1: 1.4, color: 0xffffff, opacity: 0.6, vel: V(-2, 1, 0), gravity: 4, drift: 0, spread: 1.5, jitter: 2.5 });
+  const sprayOut = ctx.smoke({ pos: V(XG - 0.6, Y_RIV + 0.4, 0), count: 80, rate: () => 0, life: 1.2, size0: 0.3, size1: 1.4, color: 0xffffff, opacity: 0.6, vel: V(-2, 1, 0), gravity: 4, drift: 0, spread: 1.5, jitter: 2.5 });
+  seq = new Sequence([
+    { label: 'A botter approaches from the Zuiderzee', dur: 16, start: () => { boat.visible = true; }, f: (u) => putBoat(pIn, ease(u) * 0.999 + 0.0005 * 0, yAt) },
+    { label: 'Entering the chamber', dur: 9, f: (u) => { const x = XG + 3 - (XG + 3) * ease(u); boat.position.set(x, yAt(x), 0); boat.rotation.y = Math.PI; } },
+    { label: 'Closing the sea gates', dur: 5, f: (u) => setSea(1 - ease(u)) },
+    { label: 'Levelling down to the Vecht (paddles open)', dur: 9, start: () => { sprayIn.rate = () => 35; }, f: (u) => { level = Y_SEA + (Y_RIV - Y_SEA) * ease(u); boat.position.y = level; if (u >= 1) sprayIn.rate = () => 0; } },
+    { label: 'Raising the bridge', dur: 5, f: (u) => setBridge(ease(u)) },
+    { label: 'Opening the inner gates', dur: 5, f: (u) => setInner(ease(u)) },
+    { label: 'Sailing on towards Muiden', dur: 14, f: (u) => putBoat(pOut, ease(u), yAt) },
+    { label: 'Closing the inner gates, lowering the bridge', dur: 6, start: () => { boat.visible = false; }, f: (u) => { setInner(1 - ease(u)); setBridge(1 - ease(u)); } },
+    { label: 'Refilling the chamber from the sea', dur: 8, start: () => { sprayOut.rate = () => 35; }, f: (u) => { level = Y_RIV + (Y_SEA - Y_RIV) * ease(u); if (u >= 1) sprayOut.rate = () => 0; } },
+    { label: 'Opening the sea gates', dur: 5, f: (u) => setSea(ease(u)) },
+  ], 12);
+  setSea(1); setInner(0); setBridge(0);
+
+  // ---------------- sea: nature, old and new technology, pollution
+  A.castle(ctx, -62, -48, 0.15, 1.6);                                          // Muiderslot at the river mouth
+  for (const [x, z, c] of [[-40, 18, 0x7a3a2a], [-48, 18, 0x5d3b2d], [-56, 19, 0x8f4a36], [-64, 18, 0x6a4030], [-40, -60, 0x7a3a2a]]) A.zaanHouse(ctx, x, z, Math.PI / 2, 6, 8, 4.5, c, 1.6);
+  A.chimney(ctx, -160, 110, 26, { y: 1.6, r: 1.6, rate: () => 2, color: 0x5a5550, size: 14 });     // the old gunpowder works upriver
+  A.windTurbines(ctx, [[800, -500], [800, -250], [800, 0], [800, 250], [800, 500], [1050, -375], [1050, -125], [1050, 125], [1050, 375]], { h: 110, r: 60, offshore: true });
+  A.ship(ctx, 'container', [[520, 0, -2000], [520, 0, 2000]], Y_SEA, 6, { loop: true });
+  A.botter(ctx, [[90, 0, -120], [200, 0, -40], [160, 0, 120], [70, 0, 60]], Y_SEA, 1.6, 0x7a3b22, 0.9);
+  A.botter(ctx, [[260, 0, 160], [380, 0, 60], [330, 0, -140], [220, 0, -60]], Y_SEA, 1.4, 0x5a2a1a, 0.9);
+  A.ship(ctx, 'jetski', [[60, 0, -40], [120, 0, -90], [170, 0, -30], [120, 0, 30]], Y_SEA, 9);
+  A.kitesurfer(ctx, [140, 380, -260, 0], Y_SEA);
+  A.seals(ctx, [35, 120, -60, 60], Y_SEA, 3);
+  A.waterfowl(ctx, [-120, -35, -10, 10], Y_RIV, 5, 'swan');
+  A.waterfowl(ctx, [40, 120, -40, 40], Y_SEA, 6, 'duck');
+  A.heron(ctx, 27.6, 14, Y_SEA - 0.35, 2.5);
+  A.oilSlick(ctx, 90, 40, Y_SEA, 9);
+  A.plasticRaft(ctx, 60, -30, Y_SEA, 3.5);
+  A.foam(ctx, 29.5, 30, Y_SEA + 0.02, 6, 0xf0ece0);
+  A.airplane(ctx, { alt: [800, 1200], every: [35, 60] });
+  A.drone(ctx, { center: [0, 0, 0], radius: 24, h: 16, parcel: true });
+  A.cyclists(ctx, [[21, 0, 8], [21, 0, 300]], TOP + 0.45, 3, 4.5);
+  A.cyclists(ctx, [[21, 0, -300], [21, 0, -8]], TOP + 0.45, 2, 4.5, { cargo: true });
+
+  return {
+    update(dt, t) {
+      seq.update(dt);
+      chamber.position.set(0, level, 0);
+      if (boat.visible) { boat.rotation.z = 0.04; boat.userData.sails.forEach(s => s.rotation.y = 0.3); }
+    },
+    readouts: () => [['Lock', seq.label], ['Zuiderzee', '+' + Y_SEA.toFixed(1) + ' m'], ['Vecht', Y_RIV.toFixed(1) + ' m'], ['Chamber', (level >= 0 ? '+' : '') + level.toFixed(2) + ' m']],
+  };
+}
+</script>
+</body>
+</html>

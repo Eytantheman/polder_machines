@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Scheprad watermolen, Schermerhorn 1816</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script type="importmap">
+{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+               "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/" } }
+</script>
+</head>
+<body>
+<script type="module">
+import { start, THREE, M, mat, box, cyl, ring, rand, Eased, beaufort } from '../common/engine.js';
+import { buildSmockMill, sailOmega } from '../common/mill.js';
+import * as A from '../common/assets.js';
+
+const Y_POLDER = -0.6, Y_BOEZEM = 0.6, Y_FAR = -0.9;   // polder water, Schermer boezem, Beemster
+const RACE_Z = -3.5, WHEEL_R = 3.0, AXLE_Y = 1.6;
+let mill;
+
+start({
+  slug: 'schermerhorn-1816',
+  meta: {
+    title: 'Scheprad watermolen<br>Schermerhorn, 1816',
+    original: 'Teekening van een scheprad watermolen. Bovenmolen of uitmaalder van de bedijkte Beemster op Schermer boezem, gebouwd bij Schermerhorn in den jare 1816 door F. Schoorl',
+    rows: [['Type', 'Octagonal drainage mill driving a paddle wheel (scheprad)'],
+           ['Maker', 'F. Schoorl'],
+           ['Source', 'Noord-Hollands Archief, Provinciale Atlas Noord-Holland, coll. 122, inv. 307'],
+           ['Licence', 'Public domain (PDM 1.0)']],
+    link: 'https://noord-hollandsarchief.nl/beelden/beeldbank/detail/FF4DC23EFB8E11DF9E4D523BC2E286E2',
+  },
+  panel: { title: 'Scheprad watermolen', sub: 'Schermerhorn, 1816 · drag to orbit, scroll to zoom',
+    note: 'The sails turn the paddle wheel through two gear stages. Its paddles scoop polder water up about 1.2 m into the Schermer boezem. The thatch on the near side is cut away so you can see the mechanism.' },
+  controls: [{ key: 'wind', label: 'Wind speed', min: 0, max: 20, step: 0.1, value: 6, unit: 'm/s', hint: beaufort }],
+  buttons: [{ key: 'brake', label: 'Brake (vang)', pressed: false, warn: true },
+            { key: 'cut', label: 'Cutaway', pressed: true, onToggle: (on) => mill.setCutaway(on) },
+            { key: 'cloth', label: 'Sailcloth', pressed: true, onToggle: (on) => mill.rotor.traverse(o => { if (o.isMesh && o.material === M.cloth()) o.visible = on; }) }],
+  camera: { pos: [-27, 8, 30], target: [-4.6, 4.5, -5.8], max: 220 },
+  shadowSize: 30,
+  waters: [
+    { x: [-500, -6], z: [-500, 500], y: Y_POLDER, color: 0x13302a },
+    { x: [6, 40], z: [-500, 500], y: Y_BOEZEM, color: 0x102a2a, size: 30 },
+    { x: [46, 600], z: [-500, 500], y: Y_FAR, color: 0x13302a },
+  ],
+  exclusions: [[-8, 8, -8, 8]],
+  build,
+});
+
+function build(ctx) {
+  const { scene } = ctx;
+  // ---------------- landscape
+  const grass = (x0, x1, z0, z1, y) => A.field(ctx, x0, x1, z0, z1, y, 0x5b7240, 1.2);
+  // dike with the mill, cut by the wheel race
+  box(scene, M.clay(), -6, 6, -1, 1.0, -500, -6);
+  box(scene, M.clay(), -6, 6, -1, 1.0, 6, 500);
+  for (const [x0, x1, z0, z1] of [[-6, -4.6, -6, RACE_Z - 0.9], [-6, -4.6, RACE_Z + 0.9, 6], [4.6, 6, -6, RACE_Z - 0.9], [4.6, 6, RACE_Z + 0.9, 6]])
+    box(scene, M.clay(), x0, x1, -1, 1.0, z0, z1);
+  box(scene, mat(0x5a5048, 0.95, 0, 0.3, 2), -5, 5, -1.2, -0.7, -6, 6);                      // floor of the wheel pit
+  for (const [z0, z1] of [[-500, -7], [7, 500]]) box(scene, mat(0x8a8478, 0.9, 0, 0.3, 2), -2.2, -0.2, 1.0, 1.05, z0, z1);   // shell path on the dike
+  // polder parcels with ditches between (long strips, typical of the Beemster/Schermer)
+  for (let x = -12; x > -480; x -= 160) for (let z = -480; z < 480; z += 27) {
+    if (z < 0 && z + 24 > -9) continue;                                                       // main ditch (tocht) to the wheel
+    grass(Math.max(x - 150, -500), x, z, z + 24, -0.25);
+  }
+  // far side: Beemster parcels beyond the opposite kade
+  box(scene, M.clay(), 40, 46, -1, 1.3, -500, 500);
+  box(scene, mat(0x3a3d40, 0.9, 0, 0.1), 41.5, 44.5, 1.3, 1.34, -500, 500);                  // road on the kade
+  for (let x = 50; x < 560; x += 160) for (let z = -480; z < 480; z += 27) grass(x, Math.min(x + 150, 600), z, z + 24, -0.5);
+
+  // ---------------- the mill
+  mill = buildSmockMill(ctx, { y0: 1.0, baseH: 1.6, Rb: 5.0, Rt: 3.0, H: 10.5, sailR: 11.5, sailW: 2.1, vBottom: 2.9 });
+
+  // wheel race: brick walls, a pit under the wheel, and water at two levels
+  const brick = M.brick();
+  for (const s of [-1, 1]) box(scene, brick, -14, 14, -1.6, 1.0, RACE_Z + s * 0.62 - 0.25, RACE_Z + s * 0.62 + 0.25);
+  box(scene, brick, -14, 14, -2.0, -1.6, RACE_Z - 0.9, RACE_Z + 0.9);
+  const raceWater = (x0, x1, y) => { const m = new THREE.Mesh(new THREE.BoxGeometry(x1 - x0, 0.02, 1.0), mat(0x1a3a36, 0.08, 0.2, 0, 1, { envMapIntensity: 1.4 }));
+    m.position.set((x0 + x1) / 2, y, RACE_Z); scene.add(m); return m; };
+  raceWater(-14, -2.4, Y_POLDER); raceWater(1.2, 14, Y_BOEZEM);
+  // breast of the race (kolk) and a sluice door (waaierdeur) on the boezem side
+  box(scene, mat(0x6f665c, 0.85, 0, 0.3), 2.2, 2.4, -1.2, 1.0, RACE_Z - 0.38, RACE_Z + 0.38);
+
+  // scoop wheel axle (along Z), waterwiel with face cogs, onderbonkelaar on the vertical shaft
+  const axle = new THREE.Group(); axle.position.set(mill.vx, AXLE_Y, 0); scene.add(axle);
+  const wheelX = 0;                                            // axle passes under the vertical shaft
+  cyl(axle, M.oak(), [0, 0, 1.0], [0, 0, RACE_Z - 0.8], 0.28, 12);
+  const scoop = new THREE.Group(); scoop.position.z = RACE_Z; axle.add(scoop);
+  for (const s of [-0.22, 0.22]) ring(scoop, M.elm(), new THREE.Vector3(0, 0, s), new THREE.Vector3(0, 0, 1), WHEEL_R - 1.25, WHEEL_R - 1.0, 0.12, 40);
+  for (let i = 0; i < 8; i++) { const a = i * Math.PI / 8; const arm = box(scoop, M.oak(), -0.12, 0.12, -(WHEEL_R - 1.0), WHEEL_R - 1.0, -0.24, 0.24); arm.rotation.z = a; }
+  for (let i = 0; i < 32; i++) {                               // paddles (schoepen)
+    const a = i / 32 * Math.PI * 2, p = new THREE.Group(); p.rotation.z = a; scoop.add(p);
+    box(p, M.pine(), WHEEL_R - 1.2, WHEEL_R, -0.025, 0.025, -0.28, 0.28).rotation.z = 0;
+    box(p, M.oak(), WHEEL_R - 1.3, WHEEL_R - 0.9, -0.05, 0.05, -0.3, 0.3);
+  }
+  const WW_R = 2.1, wwZ = -0.62;
+  ring(axle, M.elm(), new THREE.Vector3(0, 0, wwZ), new THREE.Vector3(0, 0, 1), WW_R - 0.35, WW_R + 0.1, 0.22, 40);
+  for (const a of [0, Math.PI / 2]) box(axle, M.elm(), -0.12, 0.12, -WW_R, WW_R, wwZ - 0.1, wwZ + 0.1).rotation.z = a;
+  for (let i = 0; i < 60; i++) { const a = i / 60 * Math.PI * 2;
+    const c = box(axle, M.cog(), -0.06, 0.06, -0.07, 0.07, wwZ + 0.1, wwZ + 0.4); c.position.set(Math.cos(a) * (WW_R - 0.15), Math.sin(a) * (WW_R - 0.15), 0); c.rotation.z = a; }
+  // lower lantern (onderbonkelaar) on the shaft, just above the waterwiel's top cogs
+  const LR = 0.42, ly = AXLE_Y + WW_R - 0.15;
+  for (const yy of [ly - 0.22, ly + 0.22]) ring(mill.vs, M.elm(), new THREE.Vector3(0, yy, 0), new THREE.Vector3(0, 1, 0), 0.15, LR + 0.1, 0.08, 20);
+  for (let i = 0; i < 12; i++) { const a = i / 12 * Math.PI * 2; cyl(mill.vs, M.cog(), [Math.cos(a) * LR, ly - 0.22, Math.sin(a) * LR], [Math.cos(a) * LR, ly + 0.22, Math.sin(a) * LR], 0.045, 6); }
+
+  // foam and spray where the paddles throw water into the boezem
+  const spray = ctx.smoke({ pos: new THREE.Vector3(mill.vx + 1.6, Y_BOEZEM + 0.1, RACE_Z), count: 120, rate: () => 40 * Math.min(1, wheelOmega * 1.5), life: 1.3,
+    size0: 0.25, size1: 1.1, color: 0xffffff, opacity: 0.55, vel: new THREE.Vector3(1.2, 1.6, 0), gravity: 4, drift: 0, spread: 1.2, jitter: 0.3 });
+  A.foam(ctx, 9, RACE_Z, Y_BOEZEM + 0.02, 2.2);
+
+  // ---------------- nature
+  A.cows(ctx, [-70, -20, 4, 45], -0.25, 9);
+  A.cows(ctx, [60, 120, -80, -30], -0.5, 6);
+  A.heron(ctx, -8.2, 2.2, Y_POLDER - 0.35, 0.6);
+  A.heron(ctx, 6.6, -16, Y_BOEZEM - 0.35, 2.6);
+  A.storkNest(ctx, -24, -15, -0.25);
+  A.waterfowl(ctx, [10, 36, -60, 60], Y_BOEZEM, 5, 'swan');
+  A.waterfowl(ctx, [8, 38, -30, 30], Y_BOEZEM, 7, 'duck');
+  A.waterfowl(ctx, [-60, -10, -8, -1], Y_POLDER, 4, 'coot');
+  A.reeds(ctx, [[6.4, -120, 6.4, -8], [6.4, 4, 6.4, 120], [39.6, -120, 39.6, 120], [-12, -8.6, -80, -8.6], [-12, -0.6, -80, -0.6]], -0.1);
+  A.trees(ctx, [[-4.5, 18, 1, 1], [-4.5, 26, 1, 0.9], [-4.5, 34, 1, 1.1], [-4.5, -16, 1, 1], [-4.5, -24, 1, 0.95], [43, 60, 1.3, 1], [43, 70, 1.3, 1], [43, 80, 1.3, 1.05]], 'pollard');
+  A.trees(ctx, [[-90, -120, -0.25, 1], [-95, -110, -0.25, 1.1], [-85, -100, -0.25, 0.9], [-260, 140, -0.25, 1.2], [-255, 150, -0.25, 1]], 'poplar');
+  A.beaver(ctx, [[20, Y_BOEZEM, -80], [24, Y_BOEZEM, 0], [18, Y_BOEZEM, 80], [30, Y_BOEZEM, 0]], Y_BOEZEM);
+
+  // ---------------- old and new technology
+  A.trekschuit(ctx, [[12.5, 0, -260], [12.5, 0, 260]], Y_BOEZEM, 1.0, 7.5, 1.3);
+  A.ship(ctx, 'tjalk', [[28, 0, -300], [28, 0, 300]], Y_BOEZEM, 1.6);
+  A.smallMill(ctx, -150, -60, -0.25, 1, 'polder', 0.2);
+  A.smallMill(ctx, -210, 40, -0.25, 1, 'polder', 0);
+  A.smallMill(ctx, 30, -190, 1.0, 0.9, 'polder', 0);
+  A.windTurbines(ctx, [[240, -260], [240, -140], [240, -20], [240, 100], [240, 220]], { h: 95, r: 50 });
+  A.solarField(ctx, 60, 130, 40, 110, -0.5);
+  A.tractor(ctx, [-140, -70, -70, -30], -0.25);
+  A.drone(ctx, { center: [0, 0, 0], radius: 22, h: 17 });
+  A.traffic(ctx, [[43, 0, -500], [43, 0, 500]], 1.34, 6, 20, { lanes: [-0.8, 0.8] });
+  A.cyclists(ctx, [[-1.2, 0, -220], [-1.2, 0, -9]], 1.05, 2, 4.5);
+  A.cyclists(ctx, [[-1.2, 0, 9], [-1.2, 0, 220]], 1.05, 3, 4.5, { cargo: true });
+  A.airplane(ctx, { alt: [800, 1100], every: [30, 60] });
+
+  // ---------------- pollution
+  A.plasticRaft(ctx, 22, 30, Y_BOEZEM, 2.5);
+  A.oilSlick(ctx, 26, -40, Y_BOEZEM, 6);
+  A.sunkenScooter(ctx, -9.5, -5, Y_POLDER - 0.25, 0.4);
+
+  // ---------------- drive
+  const sails = new Eased(0.8, 1.2, 2.6);
+  let angle = 0, wheelOmega = 0;
+  const RATIO_LOW = 12 / 60;                                       // onderbonkelaar staves : waterwiel cogs
+  return {
+    update(dt, t) {
+      const om = sails.step(ctx.state.brake ? 0 : sailOmega(ctx.state.wind), dt, ctx.state.brake);
+      angle += om * dt;
+      mill.update(angle, dt, t);
+      wheelOmega = om * mill.ratioTop * RATIO_LOW;
+      axle.rotation.z = angle * mill.ratioTop * RATIO_LOW;           // bottom paddles move toward the boezem
+    },
+    readouts: () => {
+      const rpm = (w) => (w * 60 / (2 * Math.PI)).toFixed(1) + ' rpm', om = sails.v;
+      return [['Sails', rpm(om)], ['Vertical shaft · ×48/26', rpm(om * mill.ratioTop)], ['Scoop wheel · ×12/60', rpm(wheelOmega)],
+              ['Paddle tip speed', (wheelOmega * WHEEL_R).toFixed(2) + ' m/s']];
+    },
+  };
+}
+</script>
+</body>
+</html>
