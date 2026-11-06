@@ -10,6 +10,7 @@ Animated 3D reconstructions of Dutch water-management machines, made from techni
 | Zeesluis, Muiden 1811–1812 | Sea (Zuiderzee / Vecht) | inv. 359 | [muiden-zeesluis/](muiden-zeesluis/) |
 | Noorder Valdeursluis, Zaandam | Canal (Zaan) | inv. 271 | [zaandam-valdeursluis/](zaandam-valdeursluis/) |
 | Middelste watermolen, Buitenveldert 1836 | Polder at the city's edge (now Zuidas) | inv. 377, J. Maurik | [buitenveldert-1836/](buitenveldert-1836/) |
+| Secretariegebouw, Gemeenlandshuis Delft 1931 | City canal (Oude Delft) | Delfland archive 116, I-A1-5-2, H. van der Kloot Meyburg | [delft-1931/](delft-1931/) |
 
 ## What moves
 

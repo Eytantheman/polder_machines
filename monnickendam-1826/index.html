@@ -43,7 +43,7 @@
   }
   #metaScrim { position:absolute; left:0; bottom:0; width:75vw; height:60vh; pointer-events:none;
     background:radial-gradient(ellipse at 0% 100%, rgba(10,20,25,.42) 0%, rgba(10,20,25,.18) 45%, rgba(10,20,25,0) 72%); }
-  @media (max-width:640px) { #metaScrim { top:0; bottom:auto; width:100vw; height:45vh; background:linear-gradient(rgba(10,20,25,.4), rgba(10,20,25,0)); } }
+  @media (max-width:640px) { #metaScrim { top:auto; bottom:0; width:100vw; height:50vh; background:linear-gradient(rgba(10,20,25,0), rgba(10,20,25,.45)); } }
   #meta h2 { font-size:clamp(28px, 4.2vw, 56px); font-weight:700; line-height:1.02; letter-spacing:-.015em; margin:0 0 10px; }
   #meta .orig { font-size:clamp(15px, 1.6vw, 21px); font-style:italic; font-weight:400; margin:0 0 14px; opacity:.95; }
   #meta dl { display:grid; grid-template-columns:auto 1fr; gap:4px 16px; margin:0 0 14px; font-size:clamp(13px, 1.25vw, 17px); font-weight:500; }
@@ -52,11 +52,12 @@
   #meta a { pointer-events:auto; color:#fff; font-size:clamp(14px, 1.4vw, 19px); font-weight:500; text-decoration:none;
     border-bottom:1.5px solid rgba(255,255,255,.7); padding-bottom:1px; }
   #meta a:hover { border-bottom-color:#fff; }
-  @media (max-width:640px) { #meta { left:14px; right:14px; top:14px; bottom:auto; max-width:none; } #meta dl { display:none; } }
+  @media (max-width:640px) { #meta { left:14px; right:14px; top:auto; bottom:18px; max-width:none; } #meta dl { display:none; } }
   #nav { position:absolute; top:16px; right:16px; display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end; max-width:56vw; font-family:"Helvetica Neue", Helvetica, Arial, sans-serif; }
   #nav a { color:#fff; text-decoration:none; font-size:13px; padding:5px 10px; border-radius:999px; background:rgba(10,20,25,.32); border:1px solid rgba(255,255,255,.25); }
   #nav a[aria-current=page] { background:rgba(255,255,255,.92); color:#1d2124; }
   @media (max-width:640px) { #nav { left:10px; right:10px; top:10px; max-width:none; justify-content:flex-start; } }
+  @media (max-height:500px) { #meta dl { display:none; } #meta h2 { font-size:clamp(24px, 3.4vw, 40px); } }
   #loading { position:absolute; inset:0; display:grid; place-items:center; font-size:13px; color:#fff; text-shadow:0 1px 3px rgba(0,0,0,.4); pointer-events:none; }
   #collapse { position:absolute; top:12px; right:12px; border:none; background:none; font-size:16px; cursor:pointer; color:var(--muted); display:none; }
   @media (max-width:640px) {
@@ -79,7 +80,7 @@
   </dl>
   <a href="https://noord-hollandsarchief.nl/beelden/beeldbank/detail/FF5BAC0AFB8E11DF9E4D523BC2E286E2/media/e25a596b-d3c3-6723-fe43-f99b3924b364?mode=detail&amp;view=horizontal" target="_blank" rel="noopener">View the original drawing at noord-hollandsarchief.nl &#8599;</a>
 </div>
-<nav id="nav"><a href="../monnickendam-1826/" aria-current="page">Monnickendam 1826</a><a href="../schermerhorn-1816/">Schermerhorn 1816</a><a href="../leeghwater-1843/">Leeghwater 1843</a><a href="../muiden-zeesluis/">Muiden zeesluis</a><a href="../zaandam-valdeursluis/">Zaandam valdeursluis</a><a href="../buitenveldert-1836/">Buitenveldert 1836</a></nav>
+<nav id="nav"><a href="../monnickendam-1826/" aria-current="page">Monnickendam 1826</a><a href="../schermerhorn-1816/">Schermerhorn 1816</a><a href="../leeghwater-1843/">Leeghwater 1843</a><a href="../muiden-zeesluis/">Muiden zeesluis</a><a href="../zaandam-valdeursluis/">Zaandam valdeursluis</a><a href="../buitenveldert-1836/">Buitenveldert 1836</a><a href="../delft-1931/">Delft 1931</a></nav>
 <div id="loading">Loading model…</div>
 <div id="panel">
   <button id="collapse" aria-label="Collapse panel">▾</button>

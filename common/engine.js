@@ -151,11 +151,12 @@ canvas { display:block; }
 #meta dt { opacity:.8; font-weight:400; } #meta dd { margin:0; }
 #meta a { pointer-events:auto; color:#fff; font-size:clamp(14px, 1.4vw, 19px); font-weight:500; text-decoration:none; border-bottom:1.5px solid rgba(255,255,255,.7); padding-bottom:1px; }
 #loading { position:absolute; inset:0; display:grid; place-items:center; font-size:13px; color:#fff; text-shadow:0 1px 3px rgba(0,0,0,.4); pointer-events:none; }
+@media (max-height:500px) { #meta dl { display:none; } #meta h2 { font-size:clamp(24px, 3.4vw, 40px); } }
 @media (max-width:640px) {
   #panel { top:auto; bottom:10px; left:10px; right:10px; width:auto; padding:12px 14px; }
   #panel.min .hide-min { display:none; } #collapse { display:block; }
-  #meta { left:14px; right:14px; top:54px; bottom:auto; max-width:none; } #meta dl { display:none; }
-  #metaScrim { top:0; bottom:auto; width:100vw; height:45vh; background:linear-gradient(rgba(10,20,25,.4), rgba(10,20,25,0)); }
+  #meta { left:14px; right:14px; top:auto; bottom:18px; max-width:none; } #meta dl { display:none; }
+  #metaScrim { top:auto; bottom:0; width:100vw; height:50vh; background:linear-gradient(rgba(10,20,25,0), rgba(10,20,25,.45)); }
   #nav { left:10px; right:10px; top:10px; max-width:none; justify-content:flex-start; }
 }`;
 
@@ -166,6 +167,7 @@ export const SITES = [
   { href: '../muiden-zeesluis/', label: 'Muiden zeesluis' },
   { href: '../zaandam-valdeursluis/', label: 'Zaandam valdeursluis' },
   { href: '../buitenveldert-1836/', label: 'Buitenveldert 1836' },
+  { href: '../delft-1931/', label: 'Delft 1931' },
 ];
 const BFT = [[0.3,'0 · Calm'],[1.6,'1 · Light air'],[3.4,'2 · Light breeze'],[5.5,'3 · Gentle breeze'],
   [8.0,'4 · Moderate breeze'],[10.8,'5 · Fresh breeze'],[13.9,'6 · Strong breeze'],[17.2,'7 · Near gale'],[20.8,'8 · Gale']];

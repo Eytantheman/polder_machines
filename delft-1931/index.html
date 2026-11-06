@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Secretariegebouw, Gemeenlandshuis Delft 1931</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script type="importmap">
+{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+               "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/" } }
+</script>
+</head>
+<body>
+<script type="module">
+import { start, THREE, M, mat, box, beam, cyl, rand, pick, D2R } from '../common/engine.js';
+import * as A from '../common/assets.js';
+
+// ------------------------------------------------------------------ the roof, as drawn on sheet 33
+// An L-shaped block: the secretariat wing along the street and a back wing, both 8 m deep,
+// hipped at their free ends, meeting in one outer hip and one valley. Steep (55°) slated roof.
+const RECTS = [[-12, 11, 0, 8], [3, 11, 0, 20]];          // [x0, x1, z0, z1]
+const EAVE = 9.2, S = Math.tan(55 * D2R), OV = 0.45, HALF = 4;
+const WATER = -1.1, CANAL = [-16.6, -6.4];
+const V = (x, y, z) => new THREE.Vector3(x, y, z);
+const dIn = (r, x, z) => Math.min(x - r[0], r[1] - x, z - r[2], r[3] - z);
+const Hd = (x, z) => Math.max(dIn(RECTS[0], x, z), dIn(RECTS[1], x, z));     // straight-skeleton distance
+const roofY = (x, z) => EAVE + S * Hd(x, z);
+// eave edges of the L outline, with inward normals
+const EDGES = [[[-12, 0], [11, 0], [0, 1]], [[11, 0], [11, 20], [-1, 0]], [[11, 20], [3, 20], [0, -1]],
+               [[3, 20], [3, 8], [1, 0]], [[3, 8], [-12, 8], [0, -1]], [[-12, 8], [-12, 0], [1, 0]]];
+const NODES = { mL: [-8, 4], mR: [7, 4], wB: [7, 16] };
+const HIPS = [[[-12, 0], 'mL', [-1, -1]], [[-12, 8], 'mL', [-1, 1]], [[11, 0], 'mR', [1, -1]], [[3, 20], 'wB', [-1, 1]], [[11, 20], 'wB', [1, 1]]];
+const VALLEY = [[3, 8], 'mR', [-1, 1]];
+
+let covering, lift = 0;
+
+start({
+  slug: 'delft-1931',
+  meta: {
+    title: 'Secretariegebouw<br>Gemeenlandshuis Delft, 1931',
+    original: 'Detailteekening doorsnede kap secretariegebouw, blad 33: kapconstructies',
+    rows: [['Type', 'Timber roof structure: trusses (spanten A, C, D), purlins, hips and valley'],
+           ['Maker', 'H. van der Kloot Meyburg, The Hague, 1931 · scale 1 : 20'],
+           ['Project', 'Renovation and extension of the Gemeenlandshuis, bestek 241 (1931–1933)'],
+           ['Source', 'Hoogheemraadschap van Delfland, archive 116 (Technische Dienst), I-A1-5-2']],
+    link: 'https://www.archieven.nl/nl/search-modonly?mivast=143&mizig=210&miadt=143&miview=ldt&milang=nl&misort=last_mod%7Casc&micode=116&minr=895340',
+    linkText: 'View the original drawing at archieven.nl',
+  },
+  panel: { title: 'Secretariegebouw', sub: 'Delft, 1931' },
+  controls: [], buttons: [],
+  camera: { pos: [2, 28, -40], target: [-7, 6, 6], max: 500 },
+  shadowSize: 48,
+  fog: { color: 0xc9d2d8, near: 260, far: 1800 },
+  waters: [{ x: [-500, 500], z: CANAL, y: WATER, color: 0x1d2f2a, size: 14 }],
+  ambient: { fish: false, debrisMax: 3 },
+  build,
+});
+
+function build(ctx) {
+  const { scene } = ctx;
+  const pine = mat(0xb7915f, 0.78, 0, 0.22), oak = M.oak(), brick = mat(0x8c4434, 0.9, 0, 0.35, 9);
+  const white = M.white(), glass = mat(0x22303a, 0.12, 0.5, 0.0, 1, { envMapIntensity: 1.4 });
+  const pave = mat(0x7d5a4c, 0.95, 0, 0.4, 5), stone = M.stone();
+
+  // ---------------------------------------------------------------- the canal street (Oude Delft)
+  box(scene, pave, -500, 500, -2, 0, CANAL[1], 0);                              // quay, near side
+  box(scene, pave, -500, 500, -2, 0, -23, CANAL[0]);                            // quay, far side
+  box(scene, mat(0x2b2a24, 1, 0, 0.3), -500, 500, -3.2, -2.6, CANAL[0], CANAL[1]); // canal bed
+  for (const z of CANAL) box(scene, brick, -500, 500, -2.6, 0.05, z - 0.35, z + 0.35);
+  for (const z of CANAL) box(scene, stone, -500, 500, 0.05, 0.18, z - 0.4, z + 0.4); // stone kerb
+  box(scene, M.grass(), -500, 500, -2, -0.02, 0, 500);
+  box(scene, M.grass(), -500, 500, -2, -0.02, -500, -23);
+  // a water gauge (peilschaal) on the quay wall, Delfland's own instrument
+  box(scene, white, 5.6, 5.8, -2.4, 0, CANAL[1] - 0.42, CANAL[1] - 0.36);
+  for (let y = -2.3; y < 0; y += 0.2) box(scene, mat(0x1b1b1b, 0.6, 0, 0), 5.6, 5.72, y, y + 0.03, CANAL[1] - 0.44, CANAL[1] - 0.42);
+
+  // ---------------------------------------------------------------- the secretariat building
+  const bld = new THREE.Group(); scene.add(bld);
+  for (const r of RECTS) box(bld, brick, r[0], r[1], 0, EAVE - 0.12, r[2], r[3]);
+  for (const r of RECTS) box(bld, stone, r[0] - 0.08, r[1] + 0.08, 0, 0.7, r[2] - 0.08, r[3] + 0.08);
+  for (const r of RECTS) box(bld, stone, r[0] - 0.05, r[1] + 0.05, 4.35, 4.55, r[2] - 0.05, r[3] + 0.05);   // string course
+  const win = (x, y, z, nx, nz, w = 1.3, h = 2.5) => {        // sash window on a wall with outward normal (nx, nz)
+    const g = new THREE.Group(); g.position.set(x, y, z); g.rotation.y = Math.atan2(nx, nz); bld.add(g);
+    box(g, glass, -w / 2, w / 2, 0, h, -0.02, 0.04);
+    for (const xx of [-w / 2, w / 2]) box(g, white, xx - 0.06, xx + 0.06, 0, h, 0, 0.1);
+    for (const yy of [0, h * 0.55, h]) box(g, white, -w / 2, w / 2, yy - 0.05, yy + 0.05, 0, 0.1);
+    box(g, white, -0.03, 0.03, h * 0.55, h, 0, 0.08); box(g, white, -0.03, 0.03, 0, h * 0.55, 0, 0.08);
+    box(g, stone, -w / 2 - 0.12, w / 2 + 0.12, -0.15, 0, 0, 0.16);             // sill
+    box(g, brick, -w / 2 - 0.2, w / 2 + 0.2, h, h + 0.35, 0, 0.08);            // rollaag (brick lintel)
+  };
+  for (let x = -10; x <= 9.5; x += 2.6) for (const y of [1.3, 5.2]) win(x, y, -0.02, 0, -1);
+  for (let x = -10; x <= 1; x += 2.6) for (const y of [1.3, 5.2]) win(x, y, 8.02, 0, 1);
+  for (let z = 1.6; z <= 19; z += 2.6) for (const y of [1.3, 5.2]) win(11.02, y, z, 1, 0);
+  for (let z = 10.6; z <= 19; z += 2.6) for (const y of [1.3, 5.2]) win(2.98, y, z, -1, 0);
+  for (const y of [1.3, 5.2]) { win(5, y, 20.02, 0, 1); win(9, y, 20.02, 0, 1); }
+  for (const z of [2, 6]) for (const y of [1.3, 5.2]) win(-12.02, y, z, -1, 0);
+  // entrance on the street with a stone frame and steps
+  box(bld, mat(0x2d4436, 0.6, 0, 0.1), -1.2, 1.2, 0.7, 3.6, -0.1, 0.02);
+  box(bld, stone, -1.5, 1.5, 3.6, 4.0, -0.2, 0.05); for (const s of [-1, 1]) box(bld, stone, s * 1.5 - 0.2, s * 1.5 + 0.2, 0, 3.6, -0.2, 0.05);
+  box(bld, stone, -1.6, 1.6, 0, 0.35, -1.0, -0.05); box(bld, stone, -1.6, 1.6, 0.35, 0.7, -0.6, -0.05);
+
+  // wall plates, attic floor, and the white box gutter (bakgoot) that stays when the slates lift
+  for (const [a, b] of EDGES) { const lo = Math.min, hi = Math.max;
+    box(bld, oak, lo(a[0], b[0]) - 0.1, hi(a[0], b[0]) + 0.1, EAVE - 0.3, EAVE - 0.14, lo(a[1], b[1]) - 0.1, hi(a[1], b[1]) + 0.1); }
+  for (const r of RECTS) box(bld, mat(0xa98a63, 0.85, 0, 0.3, 3), r[0] + 0.2, r[1] - 0.2, EAVE - 0.34, EAVE - 0.3, r[2] + 0.2, r[3] - 0.2);
+  for (const [a, b, n] of EDGES) {
+    const e = V(b[0] - a[0], 0, b[1] - a[1]), L = e.length(); e.normalize();
+    const nn = V(n[0], 0, n[1]), y0 = EAVE - S * OV - 0.42;
+    const p0 = V(a[0], 0, a[1]).addScaledVector(nn, -OV).addScaledVector(e, -OV), p1 = V(b[0], 0, b[1]).addScaledVector(nn, -OV).addScaledVector(e, OV);
+    const g = beam(bld, white, p0.clone().setY(y0), p1.clone().setY(y0), 0.32, 0.4);
+    g.position.addScaledVector(nn, 0.12);
+  }
+  // chimneys stand through the roof
+  for (const [x, z] of [[-4.5, 4], [7, 13]]) box(bld, brick, x - 0.5, x + 0.5, EAVE - 0.3, roofY(x, z) + 1.6, z - 0.4, z + 0.4);
+
+  // ---------------------------------------------------------------- the timber, traced from the roof surface
+  const norm = (n) => { const N = Math.hypot(S, 1); return V(S * n[0] / N, -1 / N, S * n[1] / N); };   // into the roof
+  const onPlane = (a, n, x, z) => { const t = (x - a[0]) * n[0] + (z - a[1]) * n[1]; return Hd(x, z) > -1e-6 && Math.abs(Hd(x, z) - t) < 0.012; };
+  const surf = (x, z, t) => V(x, EAVE + S * t, z);
+  const OFF_SPOOR = 0.11, OFF_GORDING = 0.29, OFF_SPANT = 0.52;
+  const timber = new THREE.Group(); scene.add(timber);
+
+  for (const [a, b, n] of EDGES) {
+    const e = [b[0] - a[0], b[1] - a[1]], L = Math.hypot(...e); e[0] /= L; e[1] /= L;
+    const dn = norm(n), up = dn.clone().negate();
+    const P = (u, t) => [a[0] + e[0] * u + n[0] * t, a[1] + e[1] * u + n[1] * t];
+    // common rafters (sporen), 60 cm apart; jack rafters stop at hips and valleys on their own
+    for (let u = -9.7; u < L + 9.7; u += 0.6) {
+      let run = null;
+      const flush = () => { if (run && run[1] - run[0] > 0.2) {
+        const e1 = run[1] - 0.07, [x0, z0] = P(u, run[0]), [x1, z1] = P(u, e1);
+        beam(timber, pine, surf(x0, z0, run[0]).addScaledVector(dn, OFF_SPOOR), surf(x1, z1, e1).addScaledVector(dn, OFF_SPOOR), 0.07, 0.15, up); } run = null; };
+      if (u > 0.05 && u < L - 0.05) run = [-OV, 0];
+      for (let t = 0; t <= HALF + 0.05; t += 0.02) {
+        const [x, z] = P(u, t);
+        if (onPlane(a, n, x, z)) { if (!run) run = [t, t]; run[1] = t; } else if (run && t > 0.02) flush();
+      }
+      flush();
+    }
+    // purlins (gordingen): three per slope, carried by the trusses
+    for (const t of [1.05, 2.15, 3.2]) {
+      let run = null;
+      const flush = () => { if (run && run[1] - run[0] > 0.4) {
+        const [x0, z0] = P(run[0], t), [x1, z1] = P(run[1], t);
+        beam(timber, oak, surf(x0, z0, t).addScaledVector(dn, OFF_GORDING), surf(x1, z1, t).addScaledVector(dn, OFF_GORDING), 0.12, 0.2, up); } run = null; };
+      for (let u = -10; u <= L + 10; u += 0.04) { const [x, z] = P(u, t); if (onPlane(a, n, x, z)) { if (!run) run = [u, u]; run[1] = u; } else flush(); }
+      flush();
+    }
+  }
+  // hips (hoekkepers), valley (kilkeper) and ridges (nokbalken)
+  const kep = (c, node, out, w = 0.1, h = 0.24) => {
+    const q = NODES[node], o = V(out[0], 0, out[1]).multiplyScalar(OV);
+    beam(timber, oak, V(c[0], EAVE - S * OV, c[1]).add(o).add(V(0, -0.14, 0)), V(q[0], EAVE + S * HALF - 0.14, q[1]), w, h);
+  };
+  for (const [c, node, out] of HIPS) kep(c, node, out);
+  kep(VALLEY[0], VALLEY[1], VALLEY[2]);
+  beam(timber, oak, V(-8, EAVE + S * HALF - 0.2, 4), V(7, EAVE + S * HALF - 0.2, 4), 0.1, 0.26);
+  beam(timber, oak, V(7, EAVE + S * HALF - 0.2, 4), V(7, EAVE + S * HALF - 0.2, 16), 0.1, 0.26);
+
+  // trusses (spanten). Type A: principal rafters, knee posts, collar, braces; type C adds a short top collar.
+  const truss = (place, kind) => {
+    const N = Math.hypot(S, 1);
+    const leg = (side) => { const foot = [side * (HALF - 0.05), EAVE], top = [0, EAVE + S * HALF];
+      const k = OFF_SPANT, nx = -side * S / N, ny = -1 / N;      // offset inward, below the roof plane
+      return [[foot[0] + nx * k, foot[1] + ny * k], [top[0] + nx * k, top[1] + ny * k]]; };
+    const yOn = (side, u) => { const [p, q] = leg(side); const s = (u - p[0]) / (q[0] - p[0]); return p[1] + (q[1] - p[1]) * s; };
+    const B = (p, q, w = 0.16, h = 0.24) => beam(timber, oak, place(p[0], p[1]), place(q[0], q[1]), w, h);
+    for (const side of [-1, 1]) { const [p, q] = leg(side); B([p[0], EAVE - 0.05], q, 0.16, 0.26); }
+    B([-HALF + 0.1, EAVE - 0.2], [HALF - 0.1, EAVE - 0.2], 0.18, 0.24);                         // tie / attic floor beam
+    const uK = HALF - 0.95, yC = EAVE + S * HALF * 0.6;
+    for (const side of [-1, 1]) {
+      B([side * uK, EAVE - 0.1], [side * uK, yOn(side, side * uK)], 0.15, 0.15);                 // knee post (standvink)
+      const uc = (EAVE + S * HALF - yC) / S;                                                    // where the collar meets the leg
+      B([side * uK, EAVE + 0.5], [side * (uK - 1.3), yOn(side, side * (uK - 1.3))], 0.12, 0.14); // brace (schoor)
+      B([side * (uc - 0.25), yC], [side * (uc - 0.25 + 0.7), yOn(side, side * (uc - 0.25 + 0.7))], 0.1, 0.12);
+    }
+    const uc = (EAVE + S * HALF - yC) / S - 0.25;
+    B([-uc, yC], [uc, yC], 0.16, 0.22);                                                           // collar (hanenbalk)
+    if (kind === 'C') { const y2 = EAVE + S * HALF * 0.86, u2 = (EAVE + S * HALF - y2) / S - 0.35; B([-u2, y2], [u2, y2], 0.1, 0.16); }
+  };
+  for (const [x, k] of [[-8, 'C'], [-4.1, 'A'], [-0.2, 'A'], [3.7, 'C']]) truss((u, y) => V(x, y, 4 + u), k);
+  for (const [z, k] of [[12, 'A'], [15.9, 'C']]) truss((u, y) => V(7 + u, y, z), k);
+
+  // ---------------------------------------------------------------- the slate covering, which lifts off
+  covering = new THREE.Group(); scene.add(covering);
+  const cv = document.createElement('canvas'); cv.width = cv.height = 256; const g2 = cv.getContext('2d');
+  g2.fillStyle = '#3c434c'; g2.fillRect(0, 0, 256, 256);
+  for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) { const off = (r % 2) * 16;
+    const v = 52 + Math.floor(Math.random() * 18); g2.fillStyle = `rgb(${v},${v + 6},${v + 16})`; g2.fillRect(c * 32 + off + 1, r * 32 + 1, 30, 29); }
+  const tex = new THREE.CanvasTexture(cv); tex.wrapS = tex.wrapT = THREE.RepeatWrapping; tex.colorSpace = THREE.SRGBColorSpace;
+  const slate = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.55, metalness: 0.15, side: THREE.DoubleSide });
+  const facet = (poly, a, n) => {        // poly: [[x,z]], plane: rises from edge point a along normal n
+    const e = [n[1], -n[0]], pos = [], uv = [];
+    for (const [x, z] of poly) { const t = (x - a[0]) * n[0] + (z - a[1]) * n[1];
+      pos.push(x, EAVE + S * t, z); uv.push((x * e[0] + z * e[1]) / 4, t * Math.hypot(1, S) / 4); }
+    const idx = []; for (let i = 1; i < poly.length - 1; i++) idx.push(0, i, i + 1);
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); g.setIndex(idx); g.computeVertexNormals();
+    const m = new THREE.Mesh(g, slate); m.castShadow = m.receiveShadow = true; covering.add(m);
+  };
+  for (const [ri, r] of RECTS.entries()) {
+    const [x0, x1, z0, z1] = r, alongX = x1 - x0 >= z1 - z0, xm = (x0 + x1) / 2, zm = (z0 + z1) / 2;
+    const R0 = alongX ? [x0 + HALF, zm] : [xm, z0 + HALF], R1 = alongX ? [x1 - HALF, zm] : [xm, z1 - HALF];
+    const near = (c) => Math.hypot(c[0] - R0[0], c[1] - R0[1]) < Math.hypot(c[0] - R1[0], c[1] - R1[1]) ? R0 : R1;
+    const C = { a: [x0, z0], b: [x1, z0], c: [x1, z1], d: [x0, z1] };
+    const X = (c, sx, sz) => [c[0] + sx * OV, c[1] + sz * OV];
+    const sides = {
+      front: [[X(C.a, -1, -1), X(C.b, 1, -1)], [x0, z0], [0, 1], [C.a, C.b]],
+      right: [[X(C.b, 1, -1), X(C.c, 1, 1)], [x1, z0], [-1, 0], [C.b, C.c]],
+      back:  [[X(C.c, 1, 1), X(C.d, -1, 1)], [x0, z1], [0, -1], [C.c, C.d]],
+      left:  [[X(C.d, -1, 1), X(C.a, -1, -1)], [x0, z0], [1, 0], [C.d, C.a]],
+    };
+    for (const [k, [ext, a, n, [c0, c1]]] of Object.entries(sides)) {
+      if ((ri === 0 && k === 'right') || (ri === 1 && k === 'front')) continue;   // coplanar with the other wing
+      const r0 = near(c0), r1 = near(c1), poly = [ext[0], ext[1], r1];
+      if (r0 !== r1) poly.push(r0);
+      // lift the covering 3 cm off the rafters
+      facet(poly.map(([x, z]) => [x, z]), [a[0] - n[0] * 0.03 / S, a[1] - n[1] * 0.03 / S], n);
+    }
+  }
+  // zinc on the ridges and hips
+  const zinc = mat(0x8e9499, 0.45, 0.6, 0.05);
+  const roll = (p, q) => cyl(covering, zinc, p, q, 0.07, 8);
+  const top = EAVE + S * HALF + 0.05;
+  roll(V(-8, top, 4), V(7, top, 4)); roll(V(7, top, 4), V(7, top, 16));
+  for (const [c, node, out] of HIPS) { const q = NODES[node]; roll(V(c[0] + out[0] * OV, EAVE - S * OV + 0.05, c[1] + out[1] * OV), V(q[0], top, q[1])); }
+
+  // ---------------------------------------------------------------- neighbours along the canal
+  const gableHouse = (x, zFront, face, w, d, h, color, kind) => {
+    const g = new THREE.Group(); g.position.set(x, 0, zFront); g.rotation.y = face > 0 ? 0 : Math.PI; scene.add(g);
+    const bm = mat(color, 0.9, 0, 0.35, 9);
+    box(g, bm, -w / 2, w / 2, 0, h, -d, 0);
+    const gh = w * 0.75;
+    if (kind === 'step') { const n = 5; for (let i = 0; i < n; i++) { const ww = w * (1 - i / n) / 2; box(g, bm, -ww, ww, h + i * gh / n, h + (i + 1) * gh / n, -0.4, 0); } }
+    else if (kind === 'neck') { box(g, bm, -w * 0.22, w * 0.22, h, h + gh, -0.4, 0); box(g, stone, -w * 0.28, w * 0.28, h + gh, h + gh + 0.3, -0.45, 0.02);
+      for (const s of [-1, 1]) box(g, stone, s * w * 0.22, s * w * 0.42, h, h + 0.35, -0.4, 0.02); }
+    else box(g, white, -w / 2 - 0.1, w / 2 + 0.1, h - 0.4, h + 0.1, -0.5, 0.15);         // cornice house
+    const roofShape = new THREE.Shape([new THREE.Vector2(-w / 2, 0), new THREE.Vector2(w / 2, 0), new THREE.Vector2(0, gh)]);
+    const r = new THREE.Mesh(new THREE.ExtrudeGeometry(roofShape, { depth: d - 0.4, bevelEnabled: false }), mat(0x6b3a2c, 0.8, 0, 0.3, 4));
+    r.position.set(0, h, -d); r.castShadow = r.receiveShadow = true; g.add(r);
+    const cols = Math.max(2, Math.floor(w / 1.8));
+    for (let c = 0; c < cols; c++) for (let fy = 1.2; fy < h - 1; fy += 3.1) {
+      const xx = -w / 2 + (c + 0.5) * w / cols;
+      box(g, glass, xx - 0.5, xx + 0.5, fy, fy + 2.0, 0, 0.04);
+      box(g, white, xx - 0.58, xx + 0.58, fy - 0.08, fy + 0.04, 0, 0.1); box(g, white, xx - 0.58, xx + 0.58, fy + 1.96, fy + 2.08, 0, 0.1);
+      box(g, white, xx - 0.03, xx + 0.03, fy, fy + 2, 0, 0.08);
+    }
+    if (kind !== 'cornice') box(g, glass, -0.5, 0.5, h + 0.6, h + 1.9, 0, 0.04);
+  };
+  const palette = [0x8c4434, 0x7a3c30, 0x9a5a44, 0x6e3a2e, 0xb7a58e, 0x5e4a40];
+  const row = (xs, zFront, face) => { for (let x = xs[0]; x < xs[1];) { const w = rand(5.5, 8.5);
+    gableHouse(x + w / 2, zFront, face, w - 0.1, rand(11, 15), rand(8, 12), pick(palette), pick(['step', 'neck', 'cornice', 'neck'])); x += w; } };
+  row([-130, -12.4], 0.6, -1); row([11.4, 130], 0.6, -1);
+  // across the water: canal houses, and behind them the leaning tower of the Oude Kerk
+  row([-130, -48], -23, 1); row([36, 130], -23, 1);
+  const kerk = new THREE.Group(); kerk.position.set(-36, 0, -40); kerk.rotation.z = -1.4 * D2R; kerk.rotation.x = 1.6 * D2R; scene.add(kerk);
+  box(kerk, brick, -6, 6, 0, 44, -6, 6);
+  for (let y = 12; y < 42; y += 9) for (const s of [-1, 1]) { box(kerk, glass, -1.2, 1.2, y, y + 5, s * 6 - 0.05, s * 6 + 0.05); box(kerk, glass, s * 6 - 0.05, s * 6 + 0.05, y, y + 5, -1.2, 1.2); }
+  for (const [sx, sz] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
+    cyl(kerk, brick, [sx * 5.3, 44, sz * 5.3], [sx * 5.3, 50, sz * 5.3], 0.9, 8);
+    const c = new THREE.Mesh(new THREE.ConeGeometry(1.15, 7, 8), slate); c.position.set(sx * 5.3, 53.5, sz * 5.3); c.castShadow = true; kerk.add(c); }
+  const spire = new THREE.Mesh(new THREE.ConeGeometry(5.6, 30, 8), slate); spire.position.y = 59; spire.castShadow = true; kerk.add(spire);
+  cyl(kerk, mat(0xc9a646, 0.4, 0.8, 0.05), [0, 74, 0], [0, 77, 0], 0.08, 6);
+  const nave = new THREE.Group(); nave.position.set(-36, 0, -66); scene.add(nave);
+  box(nave, brick, -9, 9, 0, 16, -40, 0);
+  const ns = new THREE.Shape([new THREE.Vector2(-9.5, 0), new THREE.Vector2(9.5, 0), new THREE.Vector2(0, 13)]);
+  const nr = new THREE.Mesh(new THREE.ExtrudeGeometry(ns, { depth: 40, bevelEnabled: false }), slate); nr.position.set(0, 16, -40); nr.castShadow = true; nave.add(nr);
+
+  // ---------------------------------------------------------------- the garden behind, and the 1931 builders
+  box(scene, mat(0x9a8d74, 0.95, 0, 0.3, 3), -12, 30, 0, 0.05, 8, 40);
+  A.trees(ctx, [[-6, 16, 0, 1.3], [-2, 26, 0, 1.5], [18, 30, 0, 1.4], [22, 14, 0, 1.2]]);
+  // timber scaffold against the back wing, with a hoist
+  const sc = mat(0x8a7556, 0.85, 0, 0.3);
+  for (let x = 3.6; x <= 10.6; x += 2.3) for (const z of [20.4, 21.6]) cyl(scene, sc, [x, 0, z], [x, EAVE + 1.4, z], 0.07, 6);
+  for (let y = 2.2; y < EAVE + 1; y += 2.1) { box(scene, sc, 3.4, 10.8, y, y + 0.06, 20.3, 21.7);
+    for (const z of [20.4, 21.6]) cyl(scene, sc, [3.6, y + 0.9, z], [10.6, y + 0.9, z], 0.05, 5); }
+  cyl(scene, sc, [10.6, EAVE + 1.4, 21.6], [10.6, EAVE + 1.4, 23.2], 0.07, 6);
+  const rope = new THREE.Line(new THREE.BufferGeometry().setFromPoints([V(10.6, EAVE + 1.4, 23.1), V(10.6, 0.4, 23.1)]), new THREE.LineBasicMaterial({ color: 0x3a3226 }));
+  scene.add(rope);
+  const bucket = new THREE.Group(); scene.add(bucket); box(bucket, mat(0x6a4a2a, 0.9, 0, 0.3), -0.3, 0.3, 0, 0.5, -0.3, 0.3); box(bucket, slate, -0.28, 0.28, 0.5, 0.6, -0.28, 0.28);
+
+  // ---------------------------------------------------------------- life on the canal
+  const along = (z) => [[-400, 0, z], [400, 0, z]];
+  A.trees(ctx, [...Array(40)].map((_, i) => [-180 + i * 9, -3.6, 0, 1.25]).filter(([x]) => x < -16 || x > 15));
+  A.trees(ctx, [...Array(40)].map((_, i) => [-176 + i * 9, -19.6, 0, 1.3]).filter(([x]) => x < -48 || x > 38));
+  A.cyclists(ctx, along(-1.6), 0, 6, 4.5, { cargo: true });
+  A.cyclists(ctx, along(-21), 0, 5, 4.2, { cargo: false });
+  A.ship(ctx, 'tour', [[-400, 0, -12.8], [400, 0, -12.8], [400, 0, -10], [-400, 0, -10]], WATER + 0.1, 2.4, { scale: 0.6 });
+  A.ship(ctx, 'roboat', [[-400, 0, -9.2], [400, 0, -9.2], [400, 0, -13.8], [-400, 0, -13.8]], WATER + 0.12, 1.6, { scale: 0.9 });
+  A.waterfowl(ctx, [-60, 60, -15.6, -7.4], WATER, 6, 'duck');
+  A.waterfowl(ctx, [-80, 80, -15.6, -7.4], WATER, 4, 'coot');
+  A.waterfowl(ctx, [-40, 40, -15.4, -7.6], WATER, 2, 'swan');
+  A.heron(ctx, 18, CANAL[1] + 0.3, 0.18, -1.2);
+  A.plasticRaft(ctx, -14, -15.4, WATER, 0.9);
+  A.foam(ctx, 30, -7.2, WATER + 0.01, 1.2);
+  // a bicycle, mostly underwater against the quay wall
+  const fiets = new THREE.Group(); fiets.position.set(-3, WATER - 0.45, CANAL[1] - 0.9); fiets.rotation.set(0.35, 0.2, -0.5); scene.add(fiets);
+  const rust = mat(0x5a3a26, 0.9, 0.4, 0.3);
+  for (const x of [-0.55, 0.55]) { const w = new THREE.Mesh(new THREE.TorusGeometry(0.33, 0.025, 6, 18), rust); w.position.x = x; fiets.add(w); }
+  beam(fiets, rust, [-0.55, 0, 0], [0.1, 0.45, 0], 0.04); beam(fiets, rust, [0.55, 0, 0], [0.35, 0.6, 0], 0.04); beam(fiets, rust, [-0.1, 0.05, 0], [0.35, 0.5, 0], 0.04);
+  // a moored sloep at the near quay
+  const sloep = new THREE.Group(); sloep.position.set(-24, WATER, CANAL[1] - 1.5); scene.add(sloep);
+  const hull = new THREE.Mesh(new THREE.SphereGeometry(1, 14, 8, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2), mat(0x24384a, 0.5, 0.1, 0.1)); hull.scale.set(3.2, 0.7, 1.1); hull.position.y = 0.45; sloep.add(hull);
+  box(sloep, mat(0x9a7a52, 0.7, 0, 0.2), -2.6, 2.6, 0.38, 0.45, -0.9, 0.9);
+
+  // ---------------------------------------------------------------- the cycle: slates lift, the structure shows, slates return
+  const ease = (u) => u < 0 ? 0 : u > 1 ? 1 : u * u * (3 - 2 * u);
+  const CYCLE = 34, T0 = +new URLSearchParams(location.search).get('t0') || 0;
+  return {
+    update(dt, t) {
+      const c = (t + T0 + 4) % CYCLE;
+      lift = c < 8 ? 0 : c < 14 ? ease((c - 8) / 6) : c < 28 ? 1 : 1 - ease((c - 28) / 6);
+      covering.position.y = lift * 5.5;
+      covering.traverse(m => { if (m.material === slate) { slate.transparent = lift > 0.02; slate.opacity = 1 - lift * 0.55; } });
+      const h = (Math.sin(t * 0.25) * 0.5 + 0.5) * (EAVE + 0.4);
+      bucket.position.set(10.6, h, 23.1);
+      rope.geometry.setFromPoints([V(10.6, EAVE + 1.4, 23.1), V(10.6, h + 0.6, 23.1)]);
+    },
+    readouts: () => [],
+  };
+}
+</script>
+</body>
+</html>
