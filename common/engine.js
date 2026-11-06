@@ -159,6 +159,7 @@ canvas { display:block; }
 }`;
 
 export const SITES = [
+  { href: '../world/', label: 'World' },
   { href: '../monnickendam-1826/', label: 'Monnickendam 1826' },
   { href: '../schermerhorn-1816/', label: 'Schermerhorn 1816' },
   { href: '../leeghwater-1843/', label: 'Leeghwater 1843' },
@@ -180,7 +181,7 @@ function buildUI(cfg, state) {
       <h2>${m.title}</h2>
       <p class="orig">${esc(m.original)}</p>
       <dl>${m.rows.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl>
-      <a href="${m.link}" target="_blank" rel="noopener">View the original drawing at noord-hollandsarchief.nl &#8599;</a>
+      <a href="${m.link}" ${m.link.startsWith('http') ? 'target="_blank" rel="noopener"' : ''}>${m.linkText || 'View the original drawing at noord-hollandsarchief.nl'} &#8599;</a>
     </div>
     <nav id="nav">${SITES.map(s => `<a href="${s.href}"${s.href.includes(cfg.slug) ? ' aria-current="page"' : ''}>${s.label}</a>`).join('')}</nav>
     <div id="loading">Building the scene…</div>
@@ -223,7 +224,7 @@ function buildUI(cfg, state) {
 }
 
 // ---------------------------------------------------------------- water normals
-function makeWaterNormals(N = 256) {
+export function makeWaterNormals(N = 256) {
   const waves = []; let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
   for (let i = 0; i < 40; i++) {
     let kx = Math.round((rnd() - 0.5) * 30), ky = Math.round((rnd() - 0.5) * 30);
@@ -268,7 +269,7 @@ export function start(cfg) {
   const sun = new THREE.Vector3().setFromSphericalCoords(1, THREE.MathUtils.degToRad(90 - (sky.elevation ?? 24)), THREE.MathUtils.degToRad(sky.azimuth ?? 215));
   const mkSky = () => { const s = new Sky(); s.scale.setScalar(20000); const u = s.material.uniforms;
     u.turbidity.value = sky.turbidity ?? 3.5; u.rayleigh.value = sky.rayleigh ?? 2.2; u.mieCoefficient.value = 0.004; u.mieDirectionalG.value = 0.82; u.sunPosition.value.copy(sun); return s; };
-  scene.add(mkSky());
+  const skyMesh = mkSky(); scene.add(skyMesh);
   const pmrem = new THREE.PMREMGenerator(renderer); const env = new THREE.Scene(); env.add(mkSky());
   scene.environment = pmrem.fromScene(env).texture;
   if (cfg.fog) scene.fog = new THREE.Fog(cfg.fog.color, cfg.fog.near, cfg.fog.far);
@@ -306,7 +307,7 @@ export function start(cfg) {
     return null;
   }
 
-  const ctx = { THREE, scene, camera, controls, renderer, sun, sunLight, state, waters, waterAt, updates: [], time: 0,
+  const ctx = { THREE, scene, camera, controls, renderer, sun, sunLight, sky: skyMesh, state, waters, waterAt, updates: [], time: 0, cfg,
     add(fn) { this.updates.push(fn); return fn; } };
   ctx.splash = makeSplashes(ctx);
   ctx.smoke = makeSmokeSystem(ctx);
@@ -328,7 +329,7 @@ export function start(cfg) {
     const dt = Math.min(clock.getDelta(), 0.05);
     for (let k = 0; k < SPEED; k++) {
       ctx.time += dt;
-      for (const fn of ctx.updates) fn(dt, ctx.time);
+      for (const fn of ctx.updates) { try { fn(dt, ctx.time); } catch (e) { if (!fn._warned) { fn._warned = 1; console.warn(e); } } }
       page.update && page.update(dt, ctx.time);
     }
     waterTime += dt * (0.35 + state.wind * 0.07);

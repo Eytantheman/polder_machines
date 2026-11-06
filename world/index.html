@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Polder machines: the control world</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script type="importmap">
+{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+               "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/" } }
+</script>
+<style>
+  #hud { position:absolute; right:16px; top:92px; width:290px; display:flex; flex-direction:column; gap:10px; font-family:"IBM Plex Sans", system-ui, sans-serif; }
+  .card { background:rgba(12,18,22,.72); color:#e8eef0; border:1px solid rgba(255,255,255,.12); border-radius:12px; padding:12px 14px; backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px); }
+  .card h3 { margin:0 0 8px; font-size:11px; letter-spacing:.12em; text-transform:uppercase; color:#8fd3c4; font-weight:600; }
+  #minimap { width:100%; aspect-ratio:1; display:block; border-radius:8px; cursor:pointer; background:#0b1114; }
+  .go { display:flex; flex-wrap:wrap; gap:5px; margin-top:8px; }
+  .go button { font:inherit; font-size:11px; padding:4px 9px; border-radius:999px; cursor:pointer; border:1px solid rgba(255,255,255,.2); background:rgba(255,255,255,.06); color:#e8eef0; }
+  .go button:hover { background:rgba(143,211,196,.25); }
+  .node { display:grid; grid-template-columns:1fr auto; font-size:12px; margin:5px 0 2px; gap:2px 8px; }
+  .node .v { font-family:"IBM Plex Mono", monospace; }
+  .bar { grid-column:1 / -1; position:relative; height:5px; background:rgba(255,255,255,.1); border-radius:3px; overflow:hidden; }
+  .bar i { position:absolute; left:0; top:0; bottom:0; border-radius:3px; background:#4fb3a1; transition:width .3s, background .3s; }
+  .bar b { position:absolute; top:-1px; bottom:-1px; width:2px; background:#fff; opacity:.8; }
+  .st { grid-column:1 / -1; font-size:10.5px; color:#9fb0b5; }
+  #log { font-family:"IBM Plex Mono", monospace; font-size:10.5px; line-height:1.5; max-height:150px; overflow:hidden; color:#cfe3df; }
+  #log div.warn { color:#ffcf7a; } #log div.alarm { color:#ff8a7a; }
+  #flash { position:absolute; inset:0; background:#eef4ff; opacity:0; pointer-events:none; }
+  @media (max-width:900px) { #hud { display:none; } }
+</style>
+</head>
+<body>
+<div id="flash"></div>
+<div id="hud">
+  <div class="card"><h3>Map</h3><canvas id="minimap" width="520" height="520"></canvas>
+    <div class="go" id="go"></div></div>
+  <div class="card"><h3>Water levels (m)</h3><div id="nodes"></div></div>
+  <div class="card"><h3>Control log</h3><div id="log"></div></div>
+</div>
+<script type="module">
+import { start, THREE, M, mat, box, cyl, ring, rand, pick, beaufort, makeWaterNormals } from '../common/engine.js';
+import * as A from '../common/assets.js';
+import * as MC from '../common/machines.js';
+
+// ------------------------------------------------------------------ world layout
+const SEA_X = 617;
+const NODES = {
+  sea: { name: 'Zuiderzee', h: -0.3, target: -0.3, lo: -1.2, hi: 2.4, color: 0x173c44 },
+  B:   { name: 'Boezem (shared canals)', h: -0.4, target: -0.4, lo: -1.0, hi: 0.4, max: -0.1, color: 0x163a36 },
+  A:   { name: 'Polder Schermer', h: -1.55, target: -1.6, lo: -2.4, hi: -0.6, color: 0x15352a },
+  Bv:  { name: 'Polder Buitenveldert', h: -2.25, target: -2.3, lo: -3.1, hi: -1.3, color: 0x15352a },
+  C:   { name: 'Polder Monnickendam', h: -1.15, target: -1.2, lo: -2.0, hi: -0.2, color: 0x15352a },
+  D:   { name: 'Polder Zaandam', h: -0.95, target: -1.0, lo: -1.8, hi: 0.0, color: 0x15352a },
+  L:   { name: 'Haarlemmermeer', h: -2.2, target: -4.6, lo: -5.0, hi: -1.6, color: 0x173a3c },
+};
+const RECTS = {
+  B: [[-560, 583, -12, 12], [-294, -262, -560, -12], [380, 419, -560, -12], [130, 194, 12, 560], [-436, -398, 12, 700], [-184, -120, 12, 260]],
+  sea: [[SEA_X, 4000, -4000, 4000]],
+  A: [[-560, -306, -560, -60]], Bv: [[206, 560, 150, 560]], C: [[422, 560, -560, -120]], D: [[-385, -216, 40, 280]], L: [[-800, -484, 100, 700]],
+};
+const SITES = {
+  schermerhorn: { x: -300, y: -1.0, z: -380, cam: [[-27, 8, 30], [-4.6, 4.5, -5.8]], label: 'Schermerhorn' },
+  leeghwater:   { x: -460, y: -1.2, z: 380, cam: [[-44, 17, 42], [-5.5, 8, -5.8]], label: 'Leeghwater' },
+  zaandam:      { x: -200, y: -0.4, z: 150, cam: [[-34, 17, 38], [0, 1, -2]], label: 'Zaandam' },
+  buitenveldert:{ x: 200, y: -0.9, z: 380, cam: [[24, 6.5, 30], [-1.6, 3.2, 3.8]], label: 'Buitenveldert' },
+  monnickendam: { x: 420, y: -1.21, z: -300, cam: [[-6.4, 3.4, 10.6], [-0.9, 2.2, 0]], label: 'Monnickendam' },
+  muiden:       { x: 600, y: -0.3, z: 0, cam: [[-30, 12, 26], [-5.4, 1.5, -3.7]], label: 'Muiden' },
+};
+const HUB = new THREE.Vector3(-20, 0.4, -170);
+const inR = (r, x, z) => x >= r[0] && x <= r[1] && z >= r[2] && z <= r[3];
+const nodeAt = (x, z) => { for (const k of ['B', 'A', 'Bv', 'C', 'D', 'L', 'sea']) for (const r of RECTS[k]) if (inR(r, x, z)) return k; return null; };
+
+// cheap value noise for terrain variation
+const hash = (x, z) => { const s = Math.sin(x * 127.1 + z * 311.7) * 43758.5453; return s - Math.floor(s); };
+const vnoise = (x, z) => { const xi = Math.floor(x), zi = Math.floor(z), xf = x - xi, zf = z - zi, u = xf * xf * (3 - 2 * xf), v = zf * zf * (3 - 2 * zf);
+  return (hash(xi, zi) * (1 - u) + hash(xi + 1, zi) * u) * (1 - v) + (hash(xi, zi + 1) * (1 - u) + hash(xi + 1, zi + 1) * u) * v; };
+const fbm = (x, z) => 0.6 * vnoise(x, z) + 0.3 * vnoise(x * 2.1, z * 2.1) + 0.1 * vnoise(x * 4.3, z * 4.3);
+
+function terrainH(x, z) {
+  if (x >= SEA_X) return -5.5 + Math.min(4, (x - SEA_X) * -0.0);
+  if (x >= 572) {                                                       // sea dike, cut by the lock
+    if (Math.abs(z) < 4.6 && x > 572) return -3;
+    if (Math.abs(z) < 42) return 1.9;
+    return x > 610 ? 2.3 - (x - 610) * 0.4 : 2.3;
+  }
+  if (x > -216 && x < -184 && z > 146 && z < 154) return -3;            // Zaandam lock
+  if (x > -314 && x < -286 && z > -385.5 && z < -381.5) return -2.2;    // Schermerhorn wheel race
+  if (x > 200 && x < 215 && z > 377.5 && z < 382.5) return -3.0;         // Buitenveldert screw race
+  const k = nodeAt(x, z);
+  if (k === 'B') return -3;
+  if (k === 'L') { const [x0, x1, z0, z1] = RECTS.L[0]; if (x - x0 < 4 || x1 - x < 4 || z - z0 < 4 || z1 - z < 4) return 0.4; return -4.95 + 0.9 * fbm(x * 0.012, z * 0.012); }
+  if (k && k !== 'sea') {
+    const [x0, x1, z0, z1] = RECTS[k][0], n = NODES[k];
+    if (x - x0 < 5 || x1 - x < 5 || z - z0 < 5 || z1 - z < 5) return 0.5;          // ring dike (kade)
+    if (k === 'D' && z > 142 && z < 158) return n.target - 1.5;                     // polder canal to the lock
+    const along = k === 'Bv' ? x : z;
+    if (((along % 32) + 32) % 32 < 5) return n.target - 1.0;                        // ditches every 32 m
+    return n.target + 0.45 + 0.08 * fbm(x * 0.05, z * 0.05);
+  }
+  return 0.4 + 0.15 * fbm(x * 0.02, z * 0.02);
+}
+
+let world;
+const ctxRef = {};
+
+start({
+  slug: 'world',
+  meta: {
+    title: 'Polder machines<br>The control world',
+    original: 'No one is left to work the mills. The water is still managed.',
+    rows: [['Network', 'One sea, one shared boezem, four polders and a lake being drained'],
+           ['Control', 'Automated: pumping stops, low-tide sluicing, storm closure, lock scheduling'],
+           ['Machines', 'Six drawings from the Provinciale Atlas Noord-Holland, 1811–1843']],
+    link: '../', linkText: 'All machines',
+  },
+  panel: { title: 'The control world', sub: 'All six machines on one water network · drag, scroll, or fly',
+    note: 'Rain fills the polders. The mills and the steam engine pump into the shared boezem, and the Muiden sluice lets the boezem out to sea at low tide. When the boezem is too full, the controller declares a pumping stop (maalstop). In a storm surge the sea gates stay shut.' },
+  controls: [{ key: 'sim', label: 'Simulation speed', min: 0.5, max: 6, step: 0.5, value: 1.5, unit: '×', fmt: v => v.toFixed(1), hint: () => '' }],
+  buttons: [
+    { key: 'autoW', label: 'Auto weather', pressed: true },
+    { label: 'Clear', onClick: () => world.setWeather('clear') },
+    { label: 'Rain', onClick: () => world.setWeather('rain') },
+    { label: 'Storm', onClick: () => world.setWeather('storm') },
+    { label: 'Fog', onClick: () => world.setWeather('fog') },
+    { label: 'Drought', onClick: () => world.setWeather('drought') },
+  ],
+  camera: { pos: [-430, 300, 700], target: [-80, 0, 40], min: 3, max: 2600 },
+  fov: 42, shadowSize: 70,
+  fog: { color: 0xbcc8cf, near: 900, far: 5200 },
+  waters: [],
+  ambient: { whale: true, whaleCenter: [900, 0, 0], debrisMax: 8 },
+  build: (ctx) => { world = buildWorld(ctx); return world; },
+});
+
+function buildWorld(ctx) {
+  const { scene, camera, controls, state } = ctx;
+  state.wind = 6;
+
+  // ---------------------------------------------------------------- terrain
+  const SIZE = 1700, SEG = 425;
+  const tg = new THREE.PlaneGeometry(SIZE, SIZE, SEG, SEG).rotateX(-Math.PI / 2);
+  const tp = tg.attributes.position, cols = [], c = new THREE.Color();
+  for (let i = 0; i < tp.count; i++) {
+    const x = tp.getX(i), z = tp.getZ(i), y = terrainH(x, z); tp.setY(i, y);
+    const k = nodeAt(x, z), n = fbm(x * 0.03, z * 0.03);
+    if (x >= 572) c.setHex(y > 1.5 ? 0x6f7f45 : 0x9c9278);
+    else if (y < -2.5) c.setHex(0x3b3528);
+    else if (k === 'L') c.setHex(y < -4.0 ? 0x4a4434 : 0x6b6f3e);
+    else if (k && k !== 'B') { const parcel = Math.floor((k === 'Bv' ? x : z) / 32); c.setHex([0x5f7a3c, 0x67823f, 0x58723a, 0x6f8443][(parcel % 4 + 4) % 4]); if (y < NODES[k].target) c.setHex(0x3c3a2a); }
+    else c.setHex(0x627a3e);
+    c.multiplyScalar(0.85 + n * 0.3); cols.push(c.r, c.g, c.b);
+  }
+  tg.setAttribute('color', new THREE.Float32BufferAttribute(cols, 3)); tg.computeVertexNormals();
+  const terrain = new THREE.Mesh(tg, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0 }));
+  terrain.receiveShadow = true; scene.add(terrain);
+  // far ground ring so the horizon is not the edge of the world
+  const farM = new THREE.MeshStandardMaterial({ color: 0x5b6f3c, roughness: 1 });
+  for (const [x0, x1, z0, z1] of [[-9000, -850, -9000, 9000], [-850, SEA_X, -9000, -850], [-850, SEA_X, 850, 9000]]) {
+    const f = new THREE.Mesh(new THREE.PlaneGeometry(x1 - x0, z1 - z0).rotateX(-Math.PI / 2), farM); f.position.set((x0 + x1) / 2, 0.3, (z0 + z1) / 2); scene.add(f); }
+
+  // ---------------------------------------------------------------- water bodies (one material per node, moving levels)
+  const normals = makeWaterNormals(); normals.repeat.set(1, 1);
+  const waterMeshes = [];
+  for (const [k, rects] of Object.entries(RECTS)) {
+    const n = NODES[k];
+    n.mat = new THREE.MeshStandardMaterial({ color: n.color, roughness: 0.1, metalness: 0.05, normalMap: normals, normalScale: new THREE.Vector2(0.5, 0.5),
+      envMapIntensity: 1.1, transparent: true, opacity: 0.93 });
+    n.meshes = rects.map(r => {
+      const w = Math.min(r[1], 4000) - r[0], d = r[3] - r[2];
+      const geo = new THREE.PlaneGeometry(w, d).rotateX(-Math.PI / 2);
+      const uv = geo.attributes.uv; for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * w / 9, uv.getY(i) * d / 9);
+      const m = new THREE.Mesh(geo, n.mat); m.position.set(r[0] + w / 2, n.h, (r[2] + r[3]) / 2); m.receiveShadow = true;
+      m.userData = { node: k, rect: r, rough: k === 'sea' ? 2 : 1 }; scene.add(m); waterMeshes.push(m); return m;
+    });
+  }
+  const exclusionsR = Object.values(SITES).map(s => [s.x, s.z, 34]);
+  ctx.waterAt = (x, z, margin = 0) => {
+    for (const [ex, ez, r] of exclusionsR) if (Math.hypot(x - ex, z - ez) < r) return null;
+    const k = nodeAt(x, z); if (!k) return null;
+    const n = NODES[k];
+    if (terrainH(x, z) > n.h - 0.05 || terrainH(x + margin, z) > n.h || terrainH(x - margin, z) > n.h) return null;
+    return n.meshes.find(m => inR(m.userData.rect, x, z)) || null;
+  };
+
+  // ---------------------------------------------------------------- the six machines
+  const transfers = { muiden: 0, zaandam: 0 };
+  const hook = { transfer: (k) => { transfers[k]++; } };
+  const mach = {
+    schermerhorn: MC.schermerhorn(ctx, SITES.schermerhorn),
+    leeghwater: MC.leeghwater(ctx, SITES.leeghwater),
+    zaandam: MC.zaandam(ctx, SITES.zaandam, hook),
+    buitenveldert: MC.buitenveldert(ctx, SITES.buitenveldert),
+    monnickendam: MC.monnickendam(ctx, SITES.monnickendam),
+    muiden: MC.muiden(ctx, SITES.muiden, hook),
+  };
+  for (const m of Object.values(mach)) m.out = 0;
+  // an autonomous electric pump for the Zaandam polder (no machine in the archive drained it)
+  const ep = new THREE.Group(); ep.position.set(-232, 0.4, 70); scene.add(ep);
+  box(ep, mat(0x2b2f33, 0.4, 0.4, 0.02), -5, 5, 0, 4.5, -4, 4); box(ep, mat(0xd8dde0, 0.4, 0.2, 0.02), -5.2, 5.2, 4.5, 4.8, -4.2, 4.2);
+  const epLed = new THREE.Mesh(new THREE.BoxGeometry(10.1, 0.25, 0.1), new THREE.MeshBasicMaterial({ color: 0x29d0ff })); epLed.position.set(0, 3.6, 4.05); ep.add(epLed);
+  const epOut = ctx.smoke({ pos: new THREE.Vector3(-226, 0, 70), count: 60, rate: () => 0, life: 1, size0: 0.3, size1: 1.4, color: 0xffffff, opacity: 0.55, vel: new THREE.Vector3(1.6, 0.6, 0), gravity: 3, drift: 0, spread: 1.2, jitter: 0.5 });
+
+  // ---------------------------------------------------------------- control network: hub, sensors, data links
+  const hub = new THREE.Group(); hub.position.copy(HUB); scene.add(hub);
+  box(hub, mat(0x0d1012, 0.15, 0.6, 0.02, 1, { envMapIntensity: 1.6 }), -5, 5, 0, 64, -5, 5);
+  const hubRing = new THREE.Mesh(new THREE.TorusGeometry(7.5, 0.35, 8, 48), new THREE.MeshBasicMaterial({ color: 0x8fd3c4 })); hubRing.rotation.x = Math.PI / 2; hubRing.position.y = 40; hub.add(hubRing);
+  A.dataCenter(ctx, HUB.x + 40, HUB.z - 10, 60, 28, 0.2);
+  const links = [];
+  for (const [k, s] of Object.entries(SITES)) {
+    const a = HUB.clone().add(new THREE.Vector3(0, 64, 0)), b = new THREE.Vector3(s.x, 40, s.z);
+    const mid = a.clone().lerp(b, 0.5); mid.y += 120;
+    const curve = new THREE.QuadraticBezierCurve3(a, mid, b);
+    const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(curve.getPoints(48)), new THREE.LineBasicMaterial({ color: 0x8fd3c4, transparent: true, opacity: 0.35 }));
+    scene.add(line);
+    const pulses = [0, 0.33, 0.66].map(p => { const m = new THREE.Mesh(new THREE.SphereGeometry(1.6, 8, 6), new THREE.MeshBasicMaterial({ color: 0x8fd3c4 })); scene.add(m); return { m, p }; });
+    const beacon = new THREE.Mesh(new THREE.SphereGeometry(1.4, 10, 8), new THREE.MeshBasicMaterial({ color: 0x8fd3c4 })); beacon.position.copy(b); scene.add(beacon);
+    cyl(scene, mat(0x2b2f33, 0.4, 0.5, 0.02), [s.x, 0, s.z + 26], [s.x, 40, s.z + 26], 0.25, 6).position.set(s.x, 20 + 0.2, s.z);   // mast
+    links.push({ k, curve, line, pulses, beacon });
+  }
+  // level sensors (peilschalen) on each water body, with a ring of light riding the surface
+  const sensors = [];
+  for (const [k, pos] of Object.entries({ sea: [640, 60], B: [0, 10.5], A: [-430, -64], Bv: [380, 154], C: [500, -124], D: [-300, 44], L: [-600, 104] })) {
+    const g = new THREE.Group(); g.position.set(pos[0], 0, pos[1]); scene.add(g);
+    cyl(g, M.white(), [0, -5, 0], [0, 6, 0], 0.18, 8);
+    for (let y = -5; y < 6; y += 0.5) box(g, mat(y % 1 === 0 ? 0xc0392b : 0x111111, 0.6, 0, 0), 0.18, 0.5, y, y + 0.25, -0.12, 0.12);
+    const r = new THREE.Mesh(new THREE.TorusGeometry(0.6, 0.08, 6, 20), new THREE.MeshBasicMaterial({ color: 0x8fd3c4 })); r.rotation.x = Math.PI / 2; g.add(r);
+    sensors.push({ k, r });
+  }
+
+  // ---------------------------------------------------------------- the wider world: nature, relics, autonomous technology
+  // props that float or wade in a water body ride along with its level
+  const follow = {};
+  const onWater = (k) => { const grp = new THREE.Group(); scene.add(grp); const p = Object.create(ctx); p.scene = grp; follow[k] = { grp, h0: NODES[k].h }; return p; };
+  const cB = onWater('B'), cL = onWater('L'), cS = onWater('sea');
+  A.windTurbines(ctx, [[1100, -700], [1100, -350], [1100, 0], [1100, 350], [1100, 700], [1400, -525], [1400, -175], [1400, 175], [1400, 525]], { h: 110, r: 60, offshore: true });
+  A.windTurbines(ctx, [[540, -760], [540, 760], [-700, -760], [-760, 820], [250, -780]], { h: 95, r: 50 });
+  A.ship(cS, 'container', [[1250, 0, -3000], [1250, 0, 3000]], 0.2, 7, { loop: true });
+  A.ship(cB, 'roboat', [[-540, 0, 0], [560, 0, 4], [560, 0, -4], [-540, 0, -4]], NODES.B.h, 2.2, { scale: 1.4 });
+  A.ship(cB, 'roboat', [[160, 0, 40], [160, 0, 540], [166, 0, 540], [166, 0, 40]], NODES.B.h, 1.6, { scale: 1.3 });
+  A.solarField(ctx, 230, 330, 470, 545, NODES.Bv.target + 0.45);
+  A.towers(ctx, [[260, 700, 30, 26, 110], [310, 690, 26, 26, 90, 0x9fb2b8], [360, 720, 34, 24, 125, 0x6f8a99], [420, 700, 28, 28, 75, 0xb8c2c6], [200, 730, 24, 24, 95, 0x7d8f86]]);
+  A.crane(ctx, 330, 650, 80, 55);
+  A.drone(ctx, { center: [-300, 0, -380], radius: 40, h: 26 });
+  A.drone(ctx, { center: [600, 0, 0], radius: 50, h: 22, parcel: true });
+  A.drone(ctx, { center: [-460, 0, 380], radius: 60, h: 35 });
+  A.drone(ctx, { center: [0, 0, 0], radius: 300, h: 60, speed: 0.04 });
+  A.airplane(ctx, { landing: true, heading: Math.PI, offset: [100, 300], alt0: 380, alt1: 120, speed: 75, every: [25, 50], first: [8, 14], size: 1.3 });
+  A.smallMill(ctx, -520, -250, NODES.A.target + 0.45, 1, 'polder', 0);
+  A.smallMill(ctx, -380, -520, NODES.A.target + 0.45, 1, 'polder', 0);
+  A.smallMill(ctx, -350, 260, NODES.D.target + 0.45, 0.9, 'paltrok', 0);
+  A.cows(ctx, [-540, -330, -540, -420], NODES.A.target + 0.45, 10);
+  A.storkNest(ctx, -440, -300, NODES.A.target + 0.45);
+  A.heron(cB, -265, -200, NODES.B.h - 0.35, 1.5);
+  A.heron(cB, 186, 300, NODES.B.h - 0.35, 3.0);
+  A.waterfowl(cB, [-500, 500, -10, 10], NODES.B.h, 10, 'duck');
+  A.waterfowl(cB, [-180, -124, 20, 250], NODES.B.h, 4, 'swan');
+  A.waterfowl(cL, [-780, -500, 120, 680], NODES.L.h, 8, 'coot');
+  A.seals(cS, [630, 820, -200, 200], 0.2, 4);
+  A.beaver(cB, [[-430, 0, 100], [-404, 0, 600], [-430, 0, 650], [-404, 0, 150]], NODES.B.h);
+  A.oilSlick(cS, 760, 120, 0.2, 14);
+  A.plasticRaft(cB, 60, 0, NODES.B.h, 3); A.plasticRaft(cB, -150, 150, NODES.B.h, 2.5);
+  A.rubberDuck(cB, [[-500, 0, 0], [540, 0, 0]], NODES.B.h, 5);
+  A.sunkenScooter(cB, 100, 11, NODES.B.h - 0.25, 0.2); A.sunkenScooter(cB, -250, 11.4, NODES.B.h - 0.25, 2.2);
+  A.foam(cS, 630, 0, 0.2, 8);
+  A.reeds(cB, [[-560, -13, 583, -13], [-560, 13, 583, 13], [-295, -560, -295, -14], [129, 14, 129, 560], [-437, 14, -437, 700]], NODES.B.h - 0.2);
+  A.trees(ctx, [[-250, -100], [-240, -110], [-230, -95], [80, 40], [90, 50], [100, 35], [480, 60], [470, 80], [-120, -300], [-100, -310]].map(([x, z]) => [x, z, 0.4, 1.1]), 'pollard');
+  A.trees(ctx, [[-50, 300], [-40, 320], [-60, 340], [300, -60], [320, -70]].map(([x, z]) => [x, z, 0.4, 1.2]), 'poplar');
+
+  // ---------------------------------------------------------------- weather
+  const WX = {
+    clear:   { label: 'Clear', wind: 5, rain: 0, cloud: 0.15, fogFar: 5200, fogNear: 900, surge: 0, evap: 0.2 },
+    cloudy:  { label: 'Overcast', wind: 8, rain: 0, cloud: 0.7, fogFar: 3600, fogNear: 600, surge: 0.1, evap: 0 },
+    rain:    { label: 'Rain', wind: 9.5, rain: 1, cloud: 0.92, fogFar: 1800, fogNear: 200, surge: 0.3, evap: 0 },
+    storm:   { label: 'Storm', wind: 18, rain: 1.6, cloud: 1, fogFar: 1100, fogNear: 120, surge: 1.7, evap: 0, lightning: true },
+    fog:     { label: 'Fog', wind: 1.8, rain: 0, cloud: 0.55, fogFar: 170, fogNear: 10, surge: 0, evap: 0 },
+    drought: { label: 'Drought', wind: 3, rain: 0, cloud: 0, fogFar: 3800, fogNear: 400, surge: -0.1, evap: 1 },
+  };
+  const ORDER = { clear: ['cloudy', 'drought', 'fog'], cloudy: ['rain', 'clear', 'storm'], rain: ['cloudy', 'storm', 'rain'], storm: ['rain', 'cloudy'], fog: ['clear', 'cloudy'], drought: ['clear', 'cloudy'] };
+  const W = { key: 'cloudy', from: { ...WX.cloudy }, cur: { ...WX.cloudy }, k: 1, t: 0, dur: 50 };
+  function setWeather(key, manual = true) {
+    W.from = { ...W.cur }; W.key = key; W.k = 0; W.t = 0; W.dur = rand(45, 85);
+    log(`weather › ${WX[key].label.toLowerCase()}${manual ? ' (forced)' : ''}`, key === 'storm' ? 'warn' : '');
+  }
+  // clouds
+  const cloudTex = (() => { const cv = document.createElement('canvas'); cv.width = cv.height = 128; const g = cv.getContext('2d');
+    for (let i = 0; i < 14; i++) { const x = 30 + Math.random() * 68, y = 40 + Math.random() * 48, r = 18 + Math.random() * 26; const gr = g.createRadialGradient(x, y, 0, x, y, r);
+      gr.addColorStop(0, 'rgba(255,255,255,0.55)'); gr.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = gr; g.fillRect(0, 0, 128, 128); }
+    return new THREE.CanvasTexture(cv); })();
+  const clouds = [];
+  for (let i = 0; i < 90; i++) { const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: cloudTex, color: 0xffffff, transparent: true, opacity: 0, depthWrite: false, fog: false }));
+    s.position.set(rand(-2600, 2600), rand(260, 420), rand(-2600, 2600)); const sc = rand(260, 520); s.scale.set(sc, sc * 0.45, 1); scene.add(s); clouds.push(s); }
+  // rain
+  const RN = 7000, rp = new Float32Array(RN * 6), rainGeo = new THREE.BufferGeometry();
+  rainGeo.setAttribute('position', new THREE.BufferAttribute(rp, 3));
+  const rain = new THREE.LineSegments(rainGeo, new THREE.LineBasicMaterial({ color: 0xc8d6e0, transparent: true, opacity: 0 })); rain.frustumCulled = false; scene.add(rain);
+  const drops = []; for (let i = 0; i < RN; i++) drops.push([rand(-160, 160), rand(0, 140), rand(-160, 160)]);
+  // lightning
+  const flashEl = document.getElementById('flash');
+  const bolt = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0xf2f6ff })); bolt.visible = false; scene.add(bolt);
+  let flashT = -1;
+
+  // ---------------------------------------------------------------- hydraulics and the controller
+  const C = { maalstop: false, spui: false, closure: false, brake: { schermerhorn: false, buitenveldert: false, monnickendam: false }, spm: 3, ep: false, prev: {} };
+  let simT = 6 * 60, simMin = 0;                                              // game clock in minutes, starts 06:00
+  const logEl = document.getElementById('log'), lines = [];
+  function clock() { const m = Math.floor(simT) % 1440; return String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0'); }
+  function log(msg, cls = '') { lines.unshift(`<div class="${cls}">${clock()} ${msg}</div>`); lines.length = Math.min(lines.length, 9); logEl.innerHTML = lines.join(''); }
+  function edge(key, val, on, off, cls) { if (C.prev[key] !== val) { if (C.prev[key] !== undefined) log(val ? on : off, val ? cls : ''); C.prev[key] = val; } }
+  const flows = { A: 0, Bv: 0, C: 0, L: 0, D: 0, spui: 0 };
+
+  function hydro(dt) {
+    const N = NODES, wx = W.cur;
+    const tide = 0.6 * Math.sin(simT / 745 * Math.PI * 2);                    // ~12.4 h tide
+    N.sea.h = -0.3 + tide + wx.surge;
+    // ---- controller (the only operator left)
+    if (!C.maalstop && N.B.h > N.B.max) C.maalstop = true;
+    if (C.maalstop && N.B.h < N.B.target + 0.08) C.maalstop = false;
+    C.closure = N.sea.h > N.B.h + 0.02;
+    C.spui = !C.closure && N.B.h > N.B.target - 0.12 && N.B.h > N.sea.h + 0.08;
+    const storm = state.wind > 15.5;
+    for (const [m, k] of [['schermerhorn', 'A'], ['buitenveldert', 'Bv'], ['monnickendam', 'C']]) {
+      const n = N[k];
+      if (C.maalstop || storm || n.h < n.target - 0.25) C.brake[m] = true;
+      else if (n.h > n.target - 0.05) C.brake[m] = false;
+    }
+    C.spm = C.maalstop ? 0.6 : THREE.MathUtils.clamp(2.2 + (N.L.h - N.L.target) * 1.6 - Math.max(0, N.B.h - N.B.target) * 10, 0.4, 7);
+    if (N.L.h <= N.L.target + 0.02) C.spm = Math.min(C.spm, 1.0);
+    C.ep = !C.maalstop && N.D.h > N.D.target - 0.05 ? true : (N.D.h < N.D.target - 0.2 ? false : C.ep);
+    C.inletSea = N.B.h < N.B.target - 0.25 && N.sea.h > N.B.h + 0.05 && state.wind < 15;
+    for (const k of ['A', 'Bv', 'C', 'D']) C['in' + k] = N[k].h < N[k].target - 0.35 && N.B.h > N[k].h + 0.4;
+    edge('inletSea', C.inletSea, 'boezem low: inlet at Muiden letting in sea water (salt intrusion watch)', 'Muiden inlet closed', 'warn');
+    edge('inletP', ['A', 'Bv', 'C', 'D'].some(k => C['in' + k]), 'polders drying out: inlets letting boezem water onto the land', 'polder inlets closed', 'warn');
+    edge('maalstop', C.maalstop, `maalstop declared: boezem ${N.B.h.toFixed(2)} m, all pumping halted`, 'maalstop lifted: pumping resumes', 'alarm');
+    edge('closure', C.closure, 'sea higher than boezem: Muiden sea gates shut', 'sea below boezem: Muiden gates may open', 'warn');
+    edge('spui', C.spui, 'Muiden sluice open: boezem draining to sea', 'Muiden sluice closed', '');
+    for (const k of ['A', 'Bv', 'C', 'D']) edge('hi' + k, N[k].h > N[k].target + 0.3, `${N[k].name}: water on the land (${N[k].h.toFixed(2)} m)`, `${N[k].name}: back under control`, 'alarm');
+    edge('lake', N.L.h < -4.1, 'Haarlemmermeer: lake bed emerging, new land', 'Haarlemmermeer: lake bed submerged again', 'warn');
+    // ---- flows (m/s of level change per simulated minute, scaled)
+    const r = wx.rain, ev = wx.evap * 0.0016;
+    const pump = { A: mach.schermerhorn.out * 0.016, Bv: mach.buitenveldert.out * 0.0021, C: mach.monnickendam.out * 0.0046, L: mach.leeghwater.out * 0.0013, D: C.ep ? 0.0065 : 0 };
+    Object.assign(flows, pump);
+    let inletDraw = 0;
+    for (const k of ['A', 'Bv', 'C', 'D']) { const inl = C['in' + k] ? 0.003 : 0; inletDraw += inl * 0.3; N[k].h += dt * (r * 0.0058 - ev + 0.0003 * (N.B.h - N[k].h) - pump[k] + inl); }
+    N.L.h += dt * (r * 0.0032 - ev * 0.6 + 0.00012 * (N.B.h - N.L.h) - pump.L);
+    let inB = (pump.A + pump.Bv + pump.C + pump.D) * 0.32 + pump.L * 0.42;
+    flows.spui = C.spui ? 0.011 * Math.sqrt(Math.max(0, N.B.h - N.sea.h)) : 0;
+    N.B.h += dt * (r * 0.0042 - ev * 0.8 + inB - inletDraw + (C.inletSea ? 0.004 : 0) - flows.spui - (C.closure ? 0 : 0.0002) + (C.closure ? 0.0006 * Math.max(0, N.sea.h - N.B.h) : 0));
+    while (transfers.muiden > 0) { transfers.muiden--; N.B.h += 0.006 * (N.sea.h - N.B.h); }
+    while (transfers.zaandam > 0) { transfers.zaandam--; N.D.h += 0.03 * Math.max(0, N.B.h - N.D.h); N.B.h -= 0.002; }
+    for (const k of Object.keys(N)) if (k !== 'sea') N[k].h = THREE.MathUtils.clamp(N[k].h, N[k].lo, N[k].hi);
+  }
+
+  // ---------------------------------------------------------------- navigation
+  const fly = { t: -1 };
+  function flyTo(pos, tgt, dur = 3.5) { fly.p0 = camera.position.clone(); fly.t0 = controls.target.clone(); fly.p1 = pos.clone(); fly.t1 = tgt.clone(); fly.t = 0; fly.dur = dur; }
+  const VIEWS = {};
+  for (const [k, s] of Object.entries(SITES)) VIEWS[k] = { label: s.label, pos: new THREE.Vector3(...s.cam[0]).add(new THREE.Vector3(s.x, s.y, s.z)), tgt: new THREE.Vector3(...s.cam[1]).add(new THREE.Vector3(s.x, s.y, s.z)) };
+  VIEWS.overview = { label: 'Overview', pos: new THREE.Vector3(-430, 300, 700), tgt: new THREE.Vector3(-80, 0, 40) };
+  VIEWS.map = { label: 'Map view', pos: new THREE.Vector3(30, 1750, 12), tgt: new THREE.Vector3(30, 0, 0) };
+  VIEWS.hub = { label: 'Control hub', pos: HUB.clone().add(new THREE.Vector3(-70, 50, 90)), tgt: HUB.clone().add(new THREE.Vector3(0, 30, 0)) };
+  const go = document.getElementById('go');
+  for (const k of ['overview', 'map', 'hub', 'schermerhorn', 'leeghwater', 'zaandam', 'buitenveldert', 'monnickendam', 'muiden']) {
+    const b = document.createElement('button'); b.textContent = VIEWS[k].label; b.onclick = () => flyTo(VIEWS[k].pos, VIEWS[k].tgt); go.appendChild(b);
+  }
+
+  // ---------------------------------------------------------------- minimap and HUD
+  const mm = document.getElementById('minimap'), g2 = mm.getContext('2d'), MS = mm.width / 1700;
+  const toMM = (x, z) => [(x + 850) * MS, (z + 850) * MS];
+  mm.addEventListener('click', (e) => {
+    const rct = mm.getBoundingClientRect(), px = (e.clientX - rct.left) / rct.width * mm.width, pz = (e.clientY - rct.top) / rct.height * mm.height;
+    const x = px / MS - 850, z = pz / MS - 850;
+    let best = null, bd = 60; for (const [k, s] of Object.entries(SITES)) { const d = Math.hypot(s.x - x, s.z - z); if (d < bd) { bd = d; best = k; } }
+    if (best) flyTo(VIEWS[best].pos, VIEWS[best].tgt);
+    else { const t = new THREE.Vector3(x, 0, z); flyTo(t.clone().add(new THREE.Vector3(-120, 110, 160)), t); }
+  });
+  const levelColor = (n) => { if (n === NODES.L) return '#3f7f9a'; const u = (n.h - n.target) / (n.hi - n.target + 1e-6); return u > 0.35 ? '#c7604d' : u > 0.12 ? '#d6a24a' : '#3f8f8a'; };
+  function drawMap() {
+    g2.fillStyle = '#4f6a37'; g2.fillRect(0, 0, mm.width, mm.height);
+    for (const [k, rects] of Object.entries(RECTS)) { g2.fillStyle = k === 'sea' ? '#24525e' : k === 'B' ? '#2f6f78' : levelColor(NODES[k]);
+      if (k !== 'sea' && k !== 'B') g2.globalAlpha = 0.75;
+      for (const r of rects) { const [a, b] = toMM(r[0], r[2]), [c2, d] = toMM(Math.min(r[1], 850), r[3]); g2.fillRect(a, b, c2 - a, d - b); }
+      g2.globalAlpha = 1; }
+    g2.font = '600 15px "IBM Plex Sans", sans-serif'; g2.textAlign = 'center';
+    for (const [k, s] of Object.entries(SITES)) { const [x, y] = toMM(s.x, s.z); g2.fillStyle = '#fff'; g2.beginPath(); g2.arc(x, y, 6, 0, 7); g2.fill();
+      g2.fillStyle = 'rgba(0,0,0,.6)'; g2.fillText(s.label, x + 1, y - 10); g2.fillStyle = '#fff'; g2.fillText(s.label, x, y - 11); }
+    const [hx, hy] = toMM(HUB.x, HUB.z); g2.fillStyle = '#8fd3c4'; g2.fillRect(hx - 5, hy - 5, 10, 10);
+    const [cx, cy] = toMM(camera.position.x, camera.position.z), [tx, ty] = toMM(controls.target.x, controls.target.z);
+    g2.strokeStyle = '#ffd36a'; g2.lineWidth = 2; g2.beginPath(); g2.moveTo(cx, cy); g2.lineTo(tx, ty); g2.stroke();
+    g2.fillStyle = '#ffd36a'; g2.beginPath(); g2.arc(cx, cy, 5, 0, 7); g2.fill();
+  }
+  const nodesEl = document.getElementById('nodes');
+  nodesEl.innerHTML = Object.entries(NODES).map(([k, n]) => `<div class="node"><span>${n.name}</span><span class="v" id="lv_${k}"></span><div class="bar"><i id="lb_${k}"></i><b id="lt_${k}"></b></div><div class="st" id="ls_${k}"></div></div>`).join('');
+  function drawNodes() {
+    for (const [k, n] of Object.entries(NODES)) {
+      const u = (h) => THREE.MathUtils.clamp((h - n.lo) / (n.hi - n.lo), 0, 1) * 100;
+      document.getElementById('lv_' + k).textContent = (n.h >= 0 ? '+' : '') + n.h.toFixed(2);
+      const bar = document.getElementById('lb_' + k); bar.style.width = u(n.h) + '%'; bar.style.background = k === 'sea' ? '#4f8fb3' : levelColor(n);
+      document.getElementById('lt_' + k).style.left = u(n.target) + '%';
+      const st = { sea: (C.closure ? (W.cur.surge > 0.8 ? 'storm surge · sea gates shut' : 'high water · sea gates shut') : 'low water · sluicing possible') + ` · surge ${W.cur.surge >= 0 ? '+' : ''}${W.cur.surge.toFixed(1)} m`,
+        B: C.maalstop ? 'MAALSTOP' : C.spui ? `sluicing to sea at Muiden` : 'holding',
+        A: `${C.brake.schermerhorn ? 'mill braked' : 'scheprad pumping'} · ${mach.schermerhorn.info()}`,
+        Bv: `${C.brake.buitenveldert ? 'mill braked' : 'screw pumping'} · ${mach.buitenveldert.info()}`,
+        C: `${C.brake.monnickendam ? 'mill braked' : 'screw pumping'} · ${mach.monnickendam.info()}`,
+        D: `${C.ep ? 'e-pump running' : 'e-pump idle'} · lock: ${mach.zaandam.info()}`,
+        L: `De Leeghwater ${mach.leeghwater.info()} · target ${n.target.toFixed(1)} m` }[k];
+      document.getElementById('ls_' + k).textContent = st;
+    }
+  }
+
+  // ---------------------------------------------------------------- per-frame
+  let hudT = 0, wxT = 0;
+  log('control › network online. six machines, seven water bodies', '');
+  return {
+    setWeather,
+    update(dt, t) {
+      const simDt = dt * state.sim;
+      simT += simDt;                                                      // 1 real second = 1 game minute × speed
+      // weather transitions
+      W.t += simDt; W.k = Math.min(1, W.k + dt / 10);
+      const e = W.k * W.k * (3 - 2 * W.k), to = WX[W.key];
+      for (const key of ['wind', 'rain', 'cloud', 'fogFar', 'fogNear', 'surge', 'evap']) W.cur[key] = W.from[key] + (to[key] - W.from[key]) * e;
+      if (state.autoW && W.t > W.dur) setWeather(pick(ORDER[W.key]), false);
+      state.wind = W.cur.wind + Math.sin(t * 0.21) * 0.8 + Math.sin(t * 0.53) * 0.4;
+      // sky, light, fog
+      const cl = W.cur.cloud, u = ctx.sky.material.uniforms;
+      u.turbidity.value = 3.5 + cl * 9 + W.cur.evap * 5; u.rayleigh.value = 2.2 - cl * 1.6 + W.cur.evap * 0.6;
+      ctx.sunLight.intensity = 2.6 * (1 - 0.8 * cl);
+      ctx.renderer.toneMappingExposure = 0.55 * (1 - 0.35 * cl) + (flashT >= 0 ? 0.9 : 0);
+      scene.fog.near = W.cur.fogNear; scene.fog.far = W.cur.fogFar;
+      scene.fog.color.setRGB(0.74 - cl * 0.2 + W.cur.evap * 0.08, 0.78 - cl * 0.2, 0.81 - cl * 0.18 - W.cur.evap * 0.06);
+      for (const s of clouds) { s.position.x += state.wind * 0.6 * dt; if (s.position.x > 2600) s.position.x = -2600; s.material.opacity = Math.min(0.85, cl * 0.9); s.material.color.setScalar(1 - cl * 0.45); }
+      // rain around the camera target
+      const rr = W.cur.rain; rain.material.opacity = Math.min(0.55, rr * 0.45);
+      if (rr > 0.02) {
+        const ct = controls.target, slant = state.wind * 0.08, fall = 26 * dt;
+        for (let i = 0; i < RN; i++) { const d = drops[i]; d[1] -= fall; d[0] += slant * fall * 0.3; if (d[1] < -2) { d[1] = rand(100, 140); d[0] = rand(-160, 160); d[2] = rand(-160, 160); }
+          const x = ct.x + d[0], y = ct.y + d[1], z = ct.z + d[2], j = i * 6;
+          rp[j] = x; rp[j + 1] = y; rp[j + 2] = z; rp[j + 3] = x - slant * 0.6; rp[j + 4] = y + 1.4; rp[j + 5] = z; }
+        rainGeo.attributes.position.needsUpdate = true;
+      }
+      // lightning
+      if (WX[W.key].lightning && W.k > 0.5 && flashT < 0 && Math.random() < dt / 6) {
+        flashT = 0; const bx = controls.target.x + rand(-500, 500), bz = controls.target.z + rand(-500, 500), pts = [];
+        let y = 380, x = bx, z = bz; while (y > 0) { pts.push(new THREE.Vector3(x, y, z)); y -= rand(20, 45); x += rand(-18, 18); z += rand(-18, 18); } pts.push(new THREE.Vector3(x, 0, z));
+        bolt.geometry.setFromPoints(pts); bolt.visible = true;
+      }
+      if (flashT >= 0) { flashT += dt; flashEl.style.opacity = flashT < 0.08 ? 0.55 : flashT < 0.16 ? 0.1 : flashT < 0.22 ? 0.4 : 0; if (flashT > 0.35) { flashT = -1; bolt.visible = false; flashEl.style.opacity = 0; } }
+      // water: rougher with wind and rain
+      normals.offset.x += dt * (0.01 + state.wind * 0.004); normals.offset.y += dt * 0.006;
+      for (const n of Object.values(NODES)) { const s = 0.18 + state.wind * 0.022 + rr * 0.2; n.mat.normalScale.set(s, s); for (const m of n.meshes) m.position.y = n.h; }
+      // hydraulics at the simulation rate
+      hydro(simDt);
+      // machines
+      const N = NODES;
+      mach.schermerhorn.out = mach.schermerhorn.update(dt, t, { wind: state.wind, brake: C.brake.schermerhorn, hP: N.A.h, hB: N.B.h });
+      mach.buitenveldert.out = mach.buitenveldert.update(dt, t, { wind: state.wind, brake: C.brake.buitenveldert });
+      mach.monnickendam.out = mach.monnickendam.update(dt, t, { wind: state.wind, brake: C.brake.monnickendam });
+      mach.leeghwater.out = mach.leeghwater.update(dt, t, { spm: C.spm });
+      mach.muiden.update(dt, t, { hSea: N.sea.h, hB: N.B.h, allowLock: !C.closure && state.wind < 16, spui: C.spui });
+      mach.zaandam.update(dt, t, { hB: N.B.h, hP: N.D.h, allowLock: N.D.h < N.D.target + 0.35 });
+      epLed.material.color.setHex(C.ep ? 0x29d0ff : 0x334047); epOut.pos.y = N.B.h + 0.2; epOut.rate = () => (C.ep ? 30 : 0);
+      for (const [k, f] of Object.entries(follow)) f.grp.position.y = N[k].h - f.h0;
+      // control network
+      hubRing.rotation.z = t * 0.6; hubRing.material.color.setHex(C.maalstop ? 0xff8a7a : 0x8fd3c4);
+      for (const L of links) {
+        const busy = { schermerhorn: !C.brake.schermerhorn, buitenveldert: !C.brake.buitenveldert, monnickendam: !C.brake.monnickendam, leeghwater: C.spm > 1, muiden: C.spui || mach.muiden.seq.i >= 0, zaandam: mach.zaandam.seq.i >= 0 }[L.k];
+        const col = C.maalstop && ['schermerhorn', 'buitenveldert', 'monnickendam', 'leeghwater'].includes(L.k) ? 0xff8a7a : busy ? 0x8fd3c4 : 0x5a6a70;
+        L.line.material.color.setHex(col); L.beacon.material.color.setHex(col); L.beacon.visible = (t * 2 + L.k.length) % 2 < 1.4;
+        for (const p of L.pulses) { p.p = (p.p + dt * (busy ? 0.25 : 0.06)) % 1; p.m.position.copy(L.curve.getPoint(p.p)); p.m.material.color.setHex(col); }
+      }
+      for (const s of sensors) { s.r.position.y = NODES[s.k].h + 0.05; const n = NODES[s.k]; s.r.material.color.setHex(s.k === 'sea' ? 0x8fd3c4 : levelColor(n) === '#c7604d' ? 0xff6a5a : levelColor(n) === '#d6a24a' ? 0xffc35a : 0x8fd3c4); }
+      // camera flight and sun following the view
+      if (fly.t >= 0) { fly.t += dt; const k = Math.min(1, fly.t / fly.dur), s = k * k * (3 - 2 * k);
+        camera.position.lerpVectors(fly.p0, fly.p1, s); camera.position.y += Math.sin(Math.PI * s) * fly.p0.distanceTo(fly.p1) * 0.12;
+        controls.target.lerpVectors(fly.t0, fly.t1, s); if (k >= 1) fly.t = -1; }
+      const tg = controls.target, dist = camera.position.distanceTo(tg), S = THREE.MathUtils.clamp(dist * 0.9, 40, 600);
+      ctx.sunLight.target.position.copy(tg); ctx.sunLight.position.copy(ctx.sun).multiplyScalar(Math.max(150, S * 1.5)).add(tg);
+      const sc = ctx.sunLight.shadow.camera; if (Math.abs(sc.right - S) > 5) { sc.left = -S; sc.right = S; sc.top = S; sc.bottom = -S; sc.far = S * 4 + 300; sc.updateProjectionMatrix(); }
+      hudT -= dt; if (hudT <= 0) { hudT = 0.25; drawMap(); drawNodes(); }
+    },
+    readouts: () => [['Game time', clock()], ['Weather', WX[W.key].label + (W.k < 1 ? ' (changing)' : '')], ['Wind', state.wind.toFixed(1) + ' m/s · ' + beaufort(state.wind).replace('Beaufort ', 'Bft ')],
+      ['Rain', (W.cur.rain * 18).toFixed(0) + ' mm/h'], ['Sea / boezem', `${NODES.sea.h.toFixed(2)} / ${NODES.B.h.toFixed(2)} m`], ['Control', C.maalstop ? 'MAALSTOP' : C.closure ? (W.cur.surge > 0.8 ? 'storm closure' : 'tide closure') : C.spui ? 'sluicing to sea' : 'nominal']],
+  };
+}
+</script>
+</body>
+</html>
