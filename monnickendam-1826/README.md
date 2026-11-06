@@ -14,7 +14,7 @@ A 3D reconstruction of a small tail-vane windmill driving an Archimedes screw (*
 - Above about 11 m/s the speed levels off, standing in for the miller reefing the sails.
 - The gearing turns at the ratios labelled on the drawing: head wheel 20 to lantern 15, and crown wheel 17 to screw wheel 20.
 - Buttons for the brake (*vang*), the cap, and the sailcloth.
-- Floating debris (bottles, plastic bags, a can, foam, a plank) drifts slowly across the view and bobs with the waves. Flocks of birds, in V-formations or loose groups, cross the frame now and then. Schools of fish occasionally leap from the water at random spots within about 13 m of the mill, with splash rings and droplets.
+- Floating debris (bottles, plastic bags, a can, foam, a plank) drifts slowly across the view and bobs with the waves. Flocks of birds, in V-formations or loose groups, cross the frame now and then. Schools of fish occasionally leap from the water at random spots within about 13 m of the mill, with splash rings and droplets. About once a minute a whale surfaces nearby: it blows, rolls its back and dorsal fin through the surface, and dives with its flukes raised.
 
 The rpm values are illustrative, not historical.
 
