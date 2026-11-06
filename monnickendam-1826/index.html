@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vijzel-staartmolentje, Monnickendam 1826</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root { --ink:#1d2124; --muted:#5d666c; --line:rgba(29,33,36,.12); --accent:#2f6f68; }
+  * { box-sizing: border-box; }
+  html, body { margin:0; height:100%; overflow:hidden; background:#9fb4c4; font-family:"IBM Plex Sans", system-ui, sans-serif; color:var(--ink); }
+  canvas { display:block; }
+  #panel {
+    position:absolute; top:16px; left:16px; width:300px; padding:16px 18px 14px;
+    background:rgba(250,248,243,.88); backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px);
+    border:1px solid var(--line); border-radius:12px; box-shadow:0 6px 24px rgba(20,30,40,.12);
+  }
+  h1 { font-size:15px; font-weight:600; margin:0 0 2px; letter-spacing:.01em; }
+  .sub { font-size:12px; color:var(--muted); margin:0 0 14px; }
+  label.row { display:flex; justify-content:space-between; align-items:baseline; font-size:12px; color:var(--muted); margin-bottom:6px; }
+  .big { font-family:"IBM Plex Mono", monospace; font-size:22px; color:var(--ink); font-weight:500; }
+  .unit { font-size:12px; color:var(--muted); margin-left:3px; }
+  input[type=range] { width:100%; accent-color:var(--accent); margin:2px 0 4px; height:22px; }
+  .bft { font-size:12px; color:var(--accent); font-weight:500; min-height:16px; margin-bottom:12px; }
+  .stats { display:grid; grid-template-columns:1fr auto; row-gap:4px; font-size:12px; border-top:1px solid var(--line); padding-top:10px; }
+  .stats span:nth-child(even) { font-family:"IBM Plex Mono", monospace; text-align:right; }
+  .meter { height:4px; background:var(--line); border-radius:2px; margin:10px 0 12px; overflow:hidden; }
+  .meter > div { height:100%; width:0; background:var(--accent); border-radius:2px; }
+  .toggles { display:flex; flex-wrap:wrap; gap:6px; margin-top:12px; }
+  .toggles button {
+    font:inherit; font-size:12px; padding:5px 10px; border-radius:999px; cursor:pointer;
+    border:1px solid var(--line); background:#fff; color:var(--ink);
+  }
+  .toggles button[aria-pressed=true] { background:var(--accent); color:#fff; border-color:var(--accent); }
+  #brake[aria-pressed=true] { background:#9a3b2e; border-color:#9a3b2e; }
+  .note { font-size:11px; color:var(--muted); margin-top:12px; line-height:1.4; }
+  #loading { position:absolute; inset:0; display:grid; place-items:center; font-size:13px; color:#fff; text-shadow:0 1px 3px rgba(0,0,0,.4); pointer-events:none; }
+  #collapse { position:absolute; top:12px; right:12px; border:none; background:none; font-size:16px; cursor:pointer; color:var(--muted); display:none; }
+  @media (max-width:640px) {
+    #panel { top:auto; bottom:10px; left:10px; right:10px; width:auto; padding:12px 14px; }
+    #panel.min .hide-min { display:none; }
+    #collapse { display:block; }
+  }
+</style>
+</head>
+<body>
+<div id="loading">Loading model…</div>
+<div id="panel">
+  <button id="collapse" aria-label="Collapse panel">▾</button>
+  <h1>Vijzel-staartmolentje</h1>
+  <p class="sub">Monnickendam, 1826 · drag to orbit, scroll to zoom</p>
+  <label class="row" for="wind"><span>Wind speed</span><span><span class="big" id="windVal">6.0</span><span class="unit">m/s</span></span></label>
+  <input id="wind" type="range" min="0" max="20" step="0.1" value="6">
+  <div class="bft" id="bft"></div>
+  <div class="hide-min">
+    <div class="stats">
+      <span>Sails (roeden)</span><span id="rpmSail">0.0 rpm</span>
+      <span>Vertical shaft · ×20/15</span><span id="rpmShaft">0.0 rpm</span>
+      <span>Screw (vijzel) · ×17/20</span><span id="rpmScrew">0.0 rpm</span>
+    </div>
+    <div class="meter" title="Current speed relative to target"><div id="meter"></div></div>
+    <div class="toggles">
+      <button id="brake" aria-pressed="false">Brake (vang)</button>
+      <button id="cap" aria-pressed="true">Cap</button>
+      <button id="cloth" aria-pressed="true">Sailcloth</button>
+    </div>
+    <p class="note">The sails speed up gradually to the speed the wind allows. Above about 11 m/s the miller would reef the sails, so the speed levels off. Wind comes from the left, onto the face of the sails.</p>
+  </div>
+</div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+} }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { Water } from 'three/addons/objects/Water.js';
+import { Sky } from 'three/addons/objects/Sky.js';
+
+const MODEL_URL = "molentje.glb";
+
+// ---------- renderer, scene, camera ----------
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 0.55;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(38, innerWidth / innerHeight, 0.1, 4000);
+camera.position.set(-6.4, 3.4, 10.6);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(-0.9, 2.2, 0);
+controls.enableDamping = true;
+controls.minDistance = 2.5;
+controls.maxDistance = 45;
+controls.maxPolarAngle = Math.PI * 0.495;
+controls.update();
+
+// ---------- sky + environment ----------
+const sun = new THREE.Vector3();
+const sky = new Sky();
+sky.scale.setScalar(10000);
+const su = sky.material.uniforms;
+su.turbidity.value = 3.5; su.rayleigh.value = 2.2; su.mieCoefficient.value = 0.004; su.mieDirectionalG.value = 0.82;
+sun.setFromSphericalCoords(1, THREE.MathUtils.degToRad(90 - 24), THREE.MathUtils.degToRad(215));
+su.sunPosition.value.copy(sun);
+scene.add(sky);
+const pmrem = new THREE.PMREMGenerator(renderer);
+const envScene = new THREE.Scene(); const sky2 = new Sky(); sky2.scale.setScalar(10000);
+sky2.material.uniforms.turbidity.value = 3.5;
+sky2.material.uniforms.rayleigh.value = 2.2; sky2.material.uniforms.mieCoefficient.value = 0.004;
+sky2.material.uniforms.sunPosition.value.copy(sun);
+envScene.add(sky2);
+scene.environment = pmrem.fromScene(envScene).texture;
+
+const sunLight = new THREE.DirectionalLight(0xfff1dd, 2.6);
+sunLight.position.copy(sun).multiplyScalar(30);
+sunLight.target.position.set(0.4, 1.5, 0);
+sunLight.castShadow = true;
+sunLight.shadow.mapSize.set(2048, 2048);
+Object.assign(sunLight.shadow.camera, { left: -7, right: 7, top: 7, bottom: -7, near: 1, far: 80 });
+sunLight.shadow.bias = -0.0004; sunLight.shadow.normalBias = 0.02;
+scene.add(sunLight, sunLight.target);
+scene.add(new THREE.HemisphereLight(0xcfdcea, 0x3c4a3a, 0.35));
+
+// ---------- procedural, tileable water normal map ----------
+function makeWaterNormals(N = 256) {
+  const waves = [];
+  let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  for (let i = 0; i < 40; i++) {
+    let kx = Math.round((rnd() - 0.5) * 30), ky = Math.round((rnd() - 0.5) * 30);
+    if (kx === 0 && ky === 0) kx = 1;
+    const k = Math.hypot(kx, ky);
+    waves.push({ kx, ky, a: 1 / Math.pow(k, 1.3), p: rnd() * Math.PI * 2 });
+  }
+  const c = document.createElement('canvas'); c.width = c.height = N;
+  const ctx = c.getContext('2d'); const img = ctx.createImageData(N, N);
+  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+    let dx = 0, dy = 0;
+    for (const w of waves) {
+      const ph = 2 * Math.PI * (w.kx * x + w.ky * y) / N + w.p;
+      const cph = Math.cos(ph) * w.a * 2 * Math.PI / N;
+      dx += cph * w.kx; dy += cph * w.ky;
+    }
+    const s = 9.0;
+    let nx = -dx * s, ny = -dy * s, nz = 1; const l = Math.hypot(nx, ny, nz);
+    const i = 4 * (y * N + x);
+    img.data[i] = (nx / l * 0.5 + 0.5) * 255; img.data[i + 1] = (ny / l * 0.5 + 0.5) * 255;
+    img.data[i + 2] = (nz / l * 0.5 + 0.5) * 255; img.data[i + 3] = 255;
+  }
+  ctx.putImageData(img, 0, 0);
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.NoColorSpace;
+  return t;
+}
+const waterNormals = makeWaterNormals();
+
+// Two water bodies, as on the drawing: boezem at Amsterdamsch Peil (+0.81 m),
+// and the lower polder water at the Waterlyn (0 m), separated by the clay dike.
+function makeWater(x0, x1, y) {
+  const geo = new THREE.PlaneGeometry(x1 - x0, 1600);
+  const w = new Water(geo, {
+    textureWidth: 1024, textureHeight: 1024, waterNormals,
+    sunDirection: sun.clone().normalize(), sunColor: 0xfff3e0,
+    waterColor: 0x0f2a28, distortionScale: 2.5, fog: false,
+  });
+  w.rotation.x = -Math.PI / 2;
+  w.position.set((x0 + x1) / 2, y, 0);
+  w.material.uniforms.size.value = 40;
+  w.receiveShadow = true;
+  scene.add(w);
+  return w;
+}
+const upperWater = makeWater(-800, 1.24, 0.81);
+const lowerWater = makeWater(2.06, 800, 0.0);
+const waters = [upperWater, lowerWater];
+
+// ---------- materials ----------
+const WOOD_NOISE = `
+  float h3(vec3 p){ p = fract(p*0.3183099+.1); p*=17.0; return fract(p.x*p.y*p.z*(p.x+p.y+p.z)); }
+  float vn(vec3 x){ vec3 i=floor(x), f=fract(x); f=f*f*(3.0-2.0*f);
+    return mix(mix(mix(h3(i),h3(i+vec3(1,0,0)),f.x),mix(h3(i+vec3(0,1,0)),h3(i+vec3(1,1,0)),f.x),f.y),
+               mix(mix(h3(i+vec3(0,0,1)),h3(i+vec3(1,0,1)),f.x),mix(h3(i+vec3(0,1,1)),h3(i+vec3(1,1,1)),f.x),f.y),f.z); }
+  float fbm(vec3 p){ return 0.55*vn(p)+0.3*vn(p*2.3)+0.15*vn(p*5.1); }
+`;
+function mat(color, rough = 0.8, metal = 0, grain = 0.22, scale = 7) {
+  const m = new THREE.MeshStandardMaterial({ color, roughness: rough, metalness: metal, envMapIntensity: 0.7 });
+  if (grain > 0) m.onBeforeCompile = (sh) => {
+    sh.vertexShader = 'varying vec3 vWP;\n' + sh.vertexShader.replace('#include <project_vertex>',
+      '#include <project_vertex>\n vWP = (modelMatrix * vec4(transformed,1.0)).xyz;');
+    sh.fragmentShader = 'varying vec3 vWP;\n' + WOOD_NOISE + sh.fragmentShader.replace('#include <color_fragment>',
+      `#include <color_fragment>
+       float g = fbm(vWP*${scale.toFixed(1)}) ; float g2 = fbm(vWP*vec3(1.5,22.0,1.5));
+       diffuseColor.rgb *= mix(1.0-${grain.toFixed(2)}, 1.0+${grain.toFixed(2)}, 0.6*g+0.4*g2);`);
+  };
+  return m;
+}
+const MATS = {
+  'Weathered oak (trestle)': mat(0x6f665c, 0.9, 0, 0.3),
+  'Wrought iron':            mat(0x1b1c1e, 0.45, 0.85, 0.08),
+  'Clay dam':                mat(0x55633a, 0.95, 0, 0.35, 0.8),
+  'Painted boards (cap)':    mat(0x3c5a4f, 0.65, 0, 0.12),
+  'Tarred boards (vane)':    mat(0x4a4038, 0.7, 0, 0.25),
+  'Hemp rope':               mat(0x9a8566, 0.9, 0, 0.1),
+  'Oak (cap frame)':         mat(0x8d6c4c, 0.8, 0, 0.25),
+  'Hornbeam (cogs)':         mat(0xb39a76, 0.6, 0, 0.12),
+  'Elm (wheels)':            mat(0x97734f, 0.72, 0, 0.22),
+  'Pine (sail lattice)':     mat(0x9c7f5d, 0.8, 0, 0.2),
+  'Sailcloth':               mat(0xd8cdb7, 0.95, 0, 0.06, 20),
+  'Pine (screw blade)':      mat(0xb08e66, 0.75, 0, 0.2),
+};
+MATS['Sailcloth'].side = THREE.DoubleSide;
+MATS['Tarred boards (vane)'].side = THREE.DoubleSide;
+
+// ---------- load model ----------
+const nodes = {};
+const buf = await (await fetch(MODEL_URL)).arrayBuffer();
+new GLTFLoader().parse(buf, '', (gltf) => {
+  const root = gltf.scene;
+  root.traverse((o) => {
+    if (o.isMesh) {
+      const m = MATS[o.material.name]; if (m) o.material = m;
+      o.castShadow = true; o.receiveShadow = true;
+      if (o.material === MATS['Clay dam']) o.castShadow = false;
+    }
+    nodes[o.name] = o;
+  });
+  scene.add(root);
+  for (const n of ['Rotor_spin', 'Koningsspil_spin', 'Vijzel_spin']) nodes[n].userData.q0 = nodes[n].quaternion.clone();
+  document.getElementById('loading').remove();
+}, (err) => { document.getElementById('loading').textContent = 'Could not load the model: ' + err.message; });
+
+// ---------- wind -> rotor speed, with eased spin-up ----------
+const R_SAIL = 2.65, TSR = 1.4, CUT_IN = 1.5, REEF_AT = 11;
+function targetOmega(v) {                      // rad/s of the sails
+  if (v <= CUT_IN) return 0;
+  const vEff = v > REEF_AT ? REEF_AT + (v - REEF_AT) * 0.25 : v;   // reefing above ~11 m/s
+  return TSR * (vEff - CUT_IN) / R_SAIL;
+}
+const BFT = [[0.3,'0 · Calm'],[1.6,'1 · Light air'],[3.4,'2 · Light breeze'],[5.5,'3 · Gentle breeze'],
+  [8.0,'4 · Moderate breeze'],[10.8,'5 · Fresh breeze'],[13.9,'6 · Strong breeze'],[17.2,'7 · Near gale'],[20.8,'8 · Gale']];
+const beaufort = (v) => 'Beaufort ' + (BFT.find(b => v < b[0]) || BFT[BFT.length - 1])[1];
+
+const ui = {
+  wind: document.getElementById('wind'), windVal: document.getElementById('windVal'), bft: document.getElementById('bft'),
+  sail: document.getElementById('rpmSail'), shaft: document.getElementById('rpmShaft'), screw: document.getElementById('rpmScrew'),
+  meter: document.getElementById('meter'), brake: document.getElementById('brake'),
+};
+let wind = parseFloat(ui.wind.value), brake = false;
+function onWind() { wind = parseFloat(ui.wind.value); ui.windVal.textContent = wind.toFixed(1); ui.bft.textContent = beaufort(wind); }
+ui.wind.addEventListener('input', onWind); onWind();
+function toggle(btn, fn) { btn.addEventListener('click', () => { const on = btn.getAttribute('aria-pressed') !== 'true'; btn.setAttribute('aria-pressed', on); fn(on); }); }
+toggle(ui.brake, (on) => brake = on);
+toggle(document.getElementById('cap'), (on) => { if (nodes['Kap.capboards']) nodes['Kap.capboards'].visible = on; });
+toggle(document.getElementById('cloth'), (on) => { if (nodes['Zeilen.cloth']) nodes['Zeilen.cloth'].visible = on; });
+const panel = document.getElementById('panel');
+document.getElementById('collapse').addEventListener('click', (e) => {
+  panel.classList.toggle('min'); e.currentTarget.textContent = panel.classList.contains('min') ? '▴' : '▾'; });
+
+// Critically damped spring on the angular velocity gives an ease-in-out response:
+// slow to spin up (inertia of sails and wheels), quicker to slow down, hard when braked.
+let omega = 0, omegaVel = 0, angle = 0;
+function stepRotor(dt) {
+  const target = brake ? 0 : targetOmega(wind);
+  const wn = brake ? 2.6 : (target > omega ? 0.8 : 1.2);
+  const acc = wn * wn * (target - omega) - 2 * wn * omegaVel;
+  omegaVel += acc * dt; omega += omegaVel * dt;
+  if (omega < 0) { omega = 0; omegaVel = Math.max(0, omegaVel); }
+  angle += omega * dt;
+  return target;
+}
+
+const axX = new THREE.Vector3(1, 0, 0), axY = new THREE.Vector3(0, 1, 0), qTmp = new THREE.Quaternion();
+function spin(node, axis, a) { node.quaternion.copy(node.userData.q0).multiply(qTmp.setFromAxisAngle(axis, a)); }
+const toRpm = (w) => (w * 60 / (2 * Math.PI)).toFixed(1) + ' rpm';
+
+// ---------- loop ----------
+const clock = new THREE.Clock();
+let waterTime = 0;
+function frame() {
+  const dt = Math.min(clock.getDelta(), 0.05);
+  const target = stepRotor(dt);
+  if (nodes.Rotor_spin) {
+    spin(nodes.Rotor_spin, axX, -angle);                       // anticlockwise seen from the front
+    spin(nodes.Koningsspil_spin, axY, angle * 20 / 15);        // head wheel 20 : lantern 15
+    spin(nodes.Vijzel_spin, axX, angle * 20 / 15 * 17 / 20);   // crown 17 : screw wheel 20
+  }
+  ui.sail.textContent = toRpm(omega);
+  ui.shaft.textContent = toRpm(omega * 20 / 15);
+  ui.screw.textContent = toRpm(omega * 17 / 15);
+  ui.meter.style.width = (target > 0 ? Math.min(100, omega / target * 100) : (omega > 0.01 ? 100 : 0)) + '%';
+
+  // water responds to the wind: rougher, faster ripples
+  waterTime += dt * (0.35 + wind * 0.07);
+  for (const w of waters) {
+    const u = w.material.uniforms;
+    u.time.value = waterTime;
+    u.distortionScale.value = 0.05 + wind * 0.045;
+    u.size.value = 38 + wind * 2.5;
+  }
+  controls.update();
+  renderer.render(scene, camera);
+  requestAnimationFrame(frame);
+}
+frame();
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+</script>
+</body>
+</html>
