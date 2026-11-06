@@ -526,12 +526,14 @@ function updateSplashes(dt) {
 }
 const schools = [];
 function spawnSchool() {
-  camBasis();
+  // a random spot in a ring around the mill, not too far from the centre
+  const C = new THREE.Vector3(controls.target.x, 0, controls.target.z);
   let P = null, region = null;
-  for (let k = 0; k < 30 && !region; k++) {
-    const D = rand(14, 45);
-    P = camera.position.clone().addScaledVector(camFwd, D).addScaledVector(camRight, rand(-0.45, 0.45) * D);
+  for (let k = 0; k < 40 && !region; k++) {
+    const r = 3.5 + Math.pow(Math.random(), 1.5) * 9.5, a = rand(0, Math.PI * 2);   // 3.5-13 m, biased inward
+    P = C.clone().add(new THREE.Vector3(Math.cos(a) * r, 0, Math.sin(a) * r));
     region = regionOf(P.x, P.z);
+    if (region === 'upper' && Math.abs(P.x) < 2.2 && Math.abs(P.z) < 2.2) region = null;   // clear of the trestle
     if (region === 'upper' && P.x > 0.2) region = null;            // keep clear of the dike edge
     if (region === 'lower' && P.x < 3.2) region = null;
   }
