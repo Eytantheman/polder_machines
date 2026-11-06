@@ -118,6 +118,7 @@ const CSS = `
 * { box-sizing: border-box; }
 html, body { margin:0; height:100%; overflow:hidden; background:#9fb4c4; font-family:"IBM Plex Sans", system-ui, sans-serif; color:var(--ink); }
 canvas { display:block; }
+#panel { display:none !important; }
 #panel { position:absolute; top:16px; left:16px; width:300px; padding:16px 18px 14px; background:rgba(250,248,243,.88);
   backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px); border:1px solid var(--line); border-radius:12px; box-shadow:0 6px 24px rgba(20,30,40,.12); }
 #panel h1 { font-size:15px; font-weight:600; margin:0 0 2px; }
