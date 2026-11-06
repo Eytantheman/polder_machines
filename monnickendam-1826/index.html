@@ -283,11 +283,198 @@ const axX = new THREE.Vector3(1, 0, 0), axY = new THREE.Vector3(0, 1, 0), qTmp =
 function spin(node, axis, a) { node.quaternion.copy(node.userData.q0).multiply(qTmp.setFromAxisAngle(axis, a)); }
 const toRpm = (w) => (w * 60 / (2 * Math.PI)).toFixed(1) + ' rpm';
 
+// ---------- drifting debris ----------
+const rand = (a, b) => a + Math.random() * (b - a);
+const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+const debrisMats = {
+  glassGreen: new THREE.MeshPhysicalMaterial({ color: 0x2d6a3a, roughness: 0.06, transparent: true, opacity: 0.72, clearcoat: 1, envMapIntensity: 1.4 }),
+  glassBrown: new THREE.MeshPhysicalMaterial({ color: 0x6b3a14, roughness: 0.06, transparent: true, opacity: 0.75, clearcoat: 1, envMapIntensity: 1.4 }),
+  label: new THREE.MeshStandardMaterial({ color: 0xe8e0c8, roughness: 0.9 }),
+  cork: new THREE.MeshStandardMaterial({ color: 0x8a6a45, roughness: 0.9 }),
+  bag: new THREE.MeshStandardMaterial({ color: 0xdfe6ea, roughness: 0.55, transparent: true, opacity: 0.88, side: THREE.DoubleSide }),
+  bagBlue: new THREE.MeshStandardMaterial({ color: 0x5b84a8, roughness: 0.5, side: THREE.DoubleSide }),
+  can: new THREE.MeshStandardMaterial({ color: 0xa8231c, roughness: 0.35, metalness: 0.7 }),
+  canEnd: new THREE.MeshStandardMaterial({ color: 0xb8bcc0, roughness: 0.3, metalness: 0.9 }),
+  foam: new THREE.MeshStandardMaterial({ color: 0xf2f0ea, roughness: 0.95 }),
+  plank: mat(0x7a6247, 0.9, 0, 0.3),
+};
+function makeBottle() {
+  const g = new THREE.Group();
+  const prof = [[0,0],[0.038,0],[0.042,0.01],[0.042,0.17],[0.036,0.2],[0.016,0.235],[0.014,0.28],[0.016,0.29],[0,0.29]]
+    .map(([r, y]) => new THREE.Vector2(r, y));
+  const body = new THREE.Mesh(new THREE.LatheGeometry(prof, 20), Math.random() < 0.6 ? debrisMats.glassGreen : debrisMats.glassBrown);
+  const label = new THREE.Mesh(new THREE.CylinderGeometry(0.0435, 0.0435, 0.08, 20, 1, true), debrisMats.label);
+  label.position.y = 0.09;
+  const cork = new THREE.Mesh(new THREE.CylinderGeometry(0.013, 0.013, 0.025, 10), debrisMats.cork);
+  cork.position.y = 0.295;
+  g.add(body, label, cork);
+  g.rotation.z = Math.PI / 2 - 0.12;     // floats on its side, neck slightly up
+  const w = new THREE.Group(); g.position.x = -0.14; w.add(g);
+  return { obj: w, sink: 0.01 };
+}
+function makeBag() {
+  const geo = new THREE.IcosahedronGeometry(0.16, 2);
+  const p = geo.attributes.position;
+  for (let i = 0; i < p.count; i++) {
+    const v = new THREE.Vector3().fromBufferAttribute(p, i);
+    v.multiplyScalar(0.7 + Math.random() * 0.55); v.y *= 0.35;
+    p.setXYZ(i, v.x, v.y, v.z);
+  }
+  geo.computeVertexNormals();
+  return { obj: new THREE.Mesh(geo, Math.random() < 0.5 ? debrisMats.bag : debrisMats.bagBlue), sink: 0.02 };
+}
+function makeCan() {
+  const g = new THREE.Group();
+  const c = new THREE.Mesh(new THREE.CylinderGeometry(0.033, 0.033, 0.115, 20), [debrisMats.can, debrisMats.canEnd, debrisMats.canEnd]);
+  c.rotation.z = Math.PI / 2; g.add(c);
+  return { obj: g, sink: 0.012 };
+}
+function makeFoam() {
+  const m = new THREE.Mesh(new THREE.BoxGeometry(rand(0.18, 0.32), 0.06, rand(0.12, 0.22)), debrisMats.foam);
+  return { obj: m, sink: -0.015 };
+}
+function makePlank() {
+  const m = new THREE.Mesh(new THREE.BoxGeometry(rand(0.6, 1.1), 0.035, 0.11), debrisMats.plank);
+  return { obj: m, sink: 0.005 };
+}
+const MAKERS = [makeBottle, makeBottle, makeBag, makeBag, makeCan, makeFoam, makePlank];
+const debris = [];
+const camFwd = new THREE.Vector3(), camRight = new THREE.Vector3();
+function camBasis() {
+  camera.getWorldDirection(camFwd); camFwd.y = 0; camFwd.normalize();
+  camRight.set(-camFwd.z, 0, camFwd.x);
+}
+function regionOf(x, z) {                       // which water body a point is in (null = dike/trestle)
+  if (x < 1.05) return (Math.abs(x) < 1.15 && Math.abs(z) < 1.15) ? null : 'upper';
+  if (x > 2.35) return 'lower';
+  return null;
+}
+function spawnDebris(midway = false) {
+  camBasis();
+  let P = null, region = null;
+  const look = new THREE.Vector3(); camera.getWorldDirection(look);
+  const pitch = Math.asin(-look.y), half = THREE.MathUtils.degToRad(camera.fov / 2);
+  for (let k = 0; k < 30 && !region; k++) {
+    // pick a spot on the water that lies in the lower part of the current frame
+    const dep = Math.max(THREE.MathUtils.degToRad(1.5), pitch + rand(0.12, 0.8) * half);
+    const h = Math.max(0.5, camera.position.y - (Math.random() < 0.7 ? 0.81 : 0));
+    const D = THREE.MathUtils.clamp(h / Math.tan(dep), 2.5, 45);
+    P = camera.position.clone().addScaledVector(camFwd, D).addScaledVector(camRight, rand(-1, 1) * D * 0.15);
+    region = regionOf(P.x, P.z);
+  }
+  if (!region) return;
+  const D = P.distanceTo(camera.position);
+  const L = D * Math.tan(THREE.MathUtils.degToRad(camera.fov * camera.aspect / 2)) * 1.25 + 3;
+  // drift across the view, angled a little, as if carried by the current and the wind
+  const dir = camRight.clone().multiplyScalar(Math.random() < 0.5 ? 1 : -1)
+    .addScaledVector(camFwd, rand(-0.35, 0.35)).normalize();
+  const { obj, sink } = pick(MAKERS)();
+  obj.traverse(o => { if (o.isMesh) o.castShadow = true; });
+  obj.scale.setScalar(0.001);
+  scene.add(obj);
+  debris.push({ obj, sink, region, P, dir, L, s: midway ? rand(-0.6, 0.6) * L : -L, vis: 0,
+    speed: rand(0.14, 0.3), phase: rand(0, 6.28), yaw: rand(0, 6.28), yawRate: rand(-0.08, 0.08) });
+}
+let nextDebris = 0;
+const tmpV = new THREE.Vector3();
+function updateDebris(dt, t) {
+  nextDebris -= dt;
+  if (nextDebris <= 0 && debris.length < 6) { spawnDebris(); nextDebris = rand(8, 20); }
+  for (let i = debris.length - 1; i >= 0; i--) {
+    const d = debris[i];
+    d.s += d.speed * (1 + wind * 0.04) * dt;                 // wind nudges them along
+    d.yaw += d.yawRate * dt;
+    tmpV.copy(d.P).addScaledVector(d.dir, d.s);
+    const inside = regionOf(tmpV.x, tmpV.z) === d.region;
+    d.vis += ((inside ? 1 : 0) - d.vis) * Math.min(1, dt * 1.5);   // surface / sink at the edges
+    const swell = 0.012 + wind * 0.0016;
+    const y = (d.region === 'upper' ? 0.81 : 0) - d.sink - (1 - d.vis) * 0.08 + Math.sin(t * 1.6 + d.phase) * swell;
+    d.obj.position.set(tmpV.x, y, tmpV.z);
+    d.obj.scale.setScalar(Math.max(0.001, d.vis));
+    d.obj.rotation.set(Math.sin(t * 1.3 + d.phase) * (0.06 + wind * 0.008), d.yaw,
+                       Math.cos(t * 1.1 + d.phase * 1.7) * (0.05 + wind * 0.008));
+    if (d.s > d.L) { scene.remove(d.obj); debris.splice(i, 1); }
+  }
+}
+spawnDebris(true); spawnDebris(true); spawnDebris(true);
+nextDebris = 4;
+
+// ---------- flocks of birds ----------
+const birdMat = new THREE.MeshStandardMaterial({ color: 0x26292c, roughness: 0.9, side: THREE.DoubleSide });
+function wingGeo(sign) {
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute([
+    0, 0, 0.06,   0, 0, -0.07,   sign * 0.55, 0.0, -0.12,
+    0, 0, -0.07,  sign * 0.55, 0.0, -0.12,  sign * 0.32, 0, -0.17 ], 3));
+  g.computeVertexNormals(); return g;
+}
+const WING_L = wingGeo(1), WING_R = wingGeo(-1);
+const BODY = new THREE.ConeGeometry(0.05, 0.38, 6).rotateX(Math.PI / 2);
+function makeBird() {
+  const g = new THREE.Group();
+  const b = new THREE.Mesh(BODY, birdMat);
+  const l = new THREE.Mesh(WING_L, birdMat), r = new THREE.Mesh(WING_R, birdMat);
+  g.add(b, l, r);
+  g.userData = { l, r, flap: rand(0, 6.28), rate: rand(7, 9), glide: rand(0, 6.28) };
+  return g;
+}
+const flocks = [];
+function spawnFlock() {
+  const n = Math.floor(rand(5, 14));
+  camBasis();
+  // cross the current view at 30-80 m, at a height that falls inside the frame
+  const D = rand(30, 80);
+  const P = camera.position.clone().addScaledVector(camFwd, D).addScaledVector(camRight, rand(-0.3, 0.3) * D);
+  const pitch = THREE.MathUtils.degToRad(rand(2, camera.fov * 0.42));
+  P.y = Math.max(7, camera.position.y + D * Math.tan(pitch));
+  const dir = camRight.clone().multiplyScalar(Math.random() < 0.5 ? 1 : -1)
+    .addScaledVector(camFwd, rand(-0.5, 0.5)).normalize();
+  const start = P.clone().addScaledVector(dir, -110);
+  const group = new THREE.Group();
+  group.position.copy(start);
+  group.lookAt(start.clone().add(dir));
+  const vee = Math.random() < 0.55;              // V-formation (geese-like) or loose flock
+  const birds = [];
+  for (let i = 0; i < n; i++) {
+    const bird = makeBird();
+    let off;
+    if (vee) { const k = Math.ceil(i / 2), s = i % 2 ? 1 : -1; off = new THREE.Vector3(s * k * 1.1, rand(-0.15, 0.15), -k * 1.3); }
+    else off = new THREE.Vector3(rand(-4, 4), rand(-1.5, 1.5), rand(-5, 5));
+    bird.userData.off = off; bird.userData.wob = rand(0, 6.28);
+    bird.scale.setScalar(vee ? rand(1.6, 1.9) : rand(0.9, 1.2));
+    group.add(bird); birds.push(bird);
+  }
+  scene.add(group);
+  flocks.push({ group, birds, dir, speed: vee ? rand(9, 12) : rand(7, 10), travelled: 0 });
+}
+let nextFlock = 6;
+function updateFlocks(dt, t) {
+  nextFlock -= dt;
+  if (nextFlock <= 0) { spawnFlock(); nextFlock = rand(18, 45); }
+  for (let i = flocks.length - 1; i >= 0; i--) {
+    const f = flocks[i];
+    const step = f.speed * dt; f.travelled += step;
+    f.group.position.addScaledVector(f.dir, step);
+    f.group.position.y += Math.sin(t * 0.4 + i) * 0.15 * dt;
+    for (const b of f.birds) {
+      const u = b.userData;
+      b.position.set(u.off.x + Math.sin(t * 0.7 + u.wob) * 0.3, u.off.y + Math.sin(t * 0.9 + u.wob) * 0.25, u.off.z);
+      const gliding = Math.sin(t * 0.35 + u.glide) > 0.55;      // occasional glide
+      const a = gliding ? 0.08 : Math.sin(t * u.rate + u.flap) * 0.65;
+      u.l.rotation.z = a; u.r.rotation.z = -a;
+    }
+    if (f.travelled > 220) { scene.remove(f.group); flocks.splice(i, 1); }
+  }
+}
+
 // ---------- loop ----------
 const clock = new THREE.Clock();
-let waterTime = 0;
+let waterTime = 0, simTime = 0;
 function frame() {
   const dt = Math.min(clock.getDelta(), 0.05);
+  simTime += dt;
+  updateDebris(dt, simTime);
+  updateFlocks(dt, simTime);
   const target = stepRotor(dt);
   if (nodes.Rotor_spin) {
     spin(nodes.Rotor_spin, axX, -angle);                       // anticlockwise seen from the front
