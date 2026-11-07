@@ -20,7 +20,7 @@ const PW = -1.93, PG = -1.45, F = -1.1, BW = -0.45, CREST = 0.85;
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 const DITCH_X = [-45, -95, -145, -195, -245];
 const NX = [-10, 24], NZ = [-6.5, 1.0], PIT = -3.6;      // the section pit, cut along the pipe line
-let motor;
+let motor, valve = { v: 0 }, primeRate = 0;
 
 start({
   slug: 'mijzen-1920',
@@ -36,9 +36,10 @@ start({
   },
   panel: { title: 'Gemaal Mijzen', sub: '1920' },
   controls: [], buttons: [],
-  camera: { pos: [3, 15, -29], target: [6.5, -6.5, 2], max: 600 },
+  camera: { pos: [1.5, 6.4, -24], target: [6, -3.2, 6], max: 600 },
   shadowSize: 30,
-  fog: { color: 0xcfd8dc, near: 240, far: 1900 },
+  fog: { color: 0xb3bbbe, near: 30, far: 400 },
+  exposure: 0.5,
   waters: [
     { x: [-320, -10], z: [-2.4, 2.4], y: PW, color: 0x2a3a2c, size: 10 },               // tocht to the intake
     { x: [26, 44], z: [-600, 600], y: BW, color: 0x2c4248, size: 14 },                   // boezem
@@ -143,7 +144,7 @@ function build(ctx) {
   const H0 = -3.0;
   box(scene, conc, -2.75, 5.35, -3.3, -3.0, -3.15, 3.0);                                  // footing under engine and switch room
   // engine room: drawn as a section, with the north wall and north roof slope cut away
-  const cutY = F + 1.25;
+  const cutY = F + 0.6;
   box(scene, conc, EW[0] + 0.34, EW[1] - 0.34, H0, F, ED[0] + 0.34, ED[1] - 0.34);                                 // floor slab
   box(scene, brick, EW[0], EW[0] + 0.33, H0, EAVE_E, ED[0], ED[1]);                     // west wall
   box(scene, brick, EW[1] - 0.33, EW[1], H0, EAVE_E, ED[0], ED[1]);                     // east wall
@@ -231,18 +232,102 @@ function build(ctx) {
   const lip2 = lip.clone(); lip2.position.z = -0.25; volute.add(lip2);
   box(volute, iron, -0.1, 0.45, -RV - 0.05, -RV + 0.35, -0.25, 0.25);                  // spiral tongue to the outlet
   box(scene, ironDark, C.x - 0.6, C.x + 0.6, F + 0.25, F + 0.35, C.z - 0.35, C.z + 0.35);
-  // discharge leaves the bottom of the volute toward the dike
-  const pipeR = 0.3;
-  const dis = [V(C.x + 0.3, F + 0.45, C.z), V(2.2, F + 0.45, C.z), V(3.6, -2.15, C.z), V(13.5, -2.15, C.z), V(16.2, BW - 0.7, C.z)];
-  for (let i = 0; i < dis.length - 1; i++) { cyl(scene, iron, dis[i], dis[i + 1], pipeR, 18);
-    ring(scene, ironDark, dis[i + 1], dis[i + 1].clone().sub(dis[i]), pipeR, pipeR + 0.08, 0.06, 18); }
-  for (let i = 1; i < dis.length - 1; i++) { const s = new THREE.Mesh(new THREE.SphereGeometry(pipeR, 16, 10), iron); s.position.copy(dis[i]); scene.add(s); }
-  // suction rises from the bell in the tocht and turns into the eye of the pump
-  const suc = [V(-5.2, PW - 0.7, 0), V(-2.0, PG - 0.55, 0), V(-2.0, C.y, 0.0), V(-1.0, C.y, 1.35), V(C.x, C.y, 1.35)];
-  for (let i = 0; i < suc.length - 1; i++) cyl(scene, iron, suc[i], suc[i + 1], 0.27, 18);
-  for (let i = 1; i < suc.length; i++) { const s = new THREE.Mesh(new THREE.SphereGeometry(0.27, 16, 10), iron); s.position.copy(suc[i]); scene.add(s); }
-  cyl(scene, iron, V(C.x, C.y, 1.35), V(C.x, C.y, C.z + 0.25), 0.27, 18);
-  ring(scene, ironDark, V(C.x, C.y, C.z + 0.3), V(0, 0, 1), 0.27, 0.36, 0.06, 18);
+  // ---------------------------------------------------------------- pipework
+  const paint = mat(0x3f5a4b, 0.5, 0.35, 0.06), bolt = mat(0x9a9a8a, 0.4, 0.8, 0.03);
+  const pipeR = 0.3, flanges = [];
+  const flange = (p, dir, r, m = ironDark, n = 10) => {          // bolted flange joint
+    const d = dir.clone().normalize(); ring(scene, m, p, d, r - 0.01, r + 0.1, 0.07, 20);
+    const q = new THREE.Quaternion().setFromUnitVectors(V(0, 0, 1), d);
+    for (let k = 0; k < n; k++) { const a = k / n * Math.PI * 2, o = V(Math.cos(a) * (r + 0.055), Math.sin(a) * (r + 0.055), 0).applyQuaternion(q);
+      cyl(scene, bolt, p.clone().add(o).addScaledVector(d, -0.07), p.clone().add(o).addScaledVector(d, 0.07), 0.014, 6); }
+  };
+  const pipeRun = (pts, r, m, bend = 0.6, every = 2.2, fl = true) => {   // a tube with swept bends and flanges along its straights
+    const path = new THREE.CurvePath(); let prev = pts[0].clone();
+    for (let i = 1; i < pts.length; i++) {
+      const p = pts[i];
+      if (i < pts.length - 1) {
+        const a = p.clone().sub(pts[i - 1]), b = pts[i + 1].clone().sub(p);
+        const d = Math.min(bend, a.length() / 2.2, b.length() / 2.2); a.normalize(); b.normalize();
+        const s0 = p.clone().addScaledVector(a, -d), s1 = p.clone().addScaledVector(b, d);
+        path.add(new THREE.LineCurve3(prev, s0)); path.add(new THREE.QuadraticBezierCurve3(s0, p.clone(), s1));
+        if (fl) { flange(s0, a, r); flange(s1, b, r); }
+        prev = s1;
+      } else path.add(new THREE.LineCurve3(prev, p.clone()));
+    }
+    const L = path.getLength();
+    const mesh = new THREE.Mesh(new THREE.TubeGeometry(path, Math.ceil(L * 14), r, 18, false), m);
+    mesh.castShadow = mesh.receiveShadow = true; scene.add(mesh);
+    if (fl) for (const c of path.curves) if (c.isLineCurve3) { const len = c.getLength(); const dir = c.v2.clone().sub(c.v1);
+      for (let u = every; u < len - 0.5; u += every) flange(c.v1.clone().addScaledVector(dir, u / len), dir, r); }
+    return path;
+  };
+  // discharge: volute, gate valve, check valve, down under the switch room, through the dike to the outlet
+  const DZ = C.z, DY = F + 0.45;
+  pipeRun([V(C.x + 0.3, DY, DZ), V(0.42, DY, DZ)], pipeR, paint, 0.5, 9, false);
+  pipeRun([V(1.12, DY, DZ), V(1.45, DY, DZ)], pipeR, paint, 0.5, 9, false);
+  pipeRun([V(1.95, DY, DZ), V(2.2, DY, DZ), V(3.6, -2.15, DZ), V(13.5, -2.15, DZ), V(16.2, BW - 0.7, DZ)], pipeR, paint, 0.8, 2.4);
+  for (const x of [0.42, 1.12, 1.45, 1.95]) flange(V(x, DY, DZ), V(1, 0, 0), pipeR);
+  flange(V(C.x + 0.3, DY, DZ), V(1, 0, 0), pipeR);
+  // gate valve (schuif) with rising spindle and handwheel
+  const gv = new THREE.Group(); gv.position.set(0.77, DY, DZ); scene.add(gv);
+  const gvb = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.4, 0.7, 20), ironDark); gvb.rotation.z = Math.PI / 2; gvb.scale.set(1, 1, 0.75); gv.add(gvb);
+  cyl(gv, ironDark, V(0, 0.2, 0), V(0, 0.95, 0), 0.24, 16, 0.18);
+  ring(scene, ironDark, V(0.77, DY + 0.95, DZ), V(0, 1, 0), 0.05, 0.27, 0.06, 18);
+  for (const s of [-1, 1]) beam(gv, ironDark, V(s * 0.16, 0.95, 0), V(s * 0.06, 1.4, 0), 0.05, 0.05);
+  const spindle = new THREE.Group(); gv.add(spindle);
+  cyl(spindle, mat(0xc8c8c0, 0.3, 0.9, 0.02), V(0, 0.9, 0), V(0, 1.75, 0), 0.025, 8);
+  const wheel = new THREE.Group(); wheel.position.y = 1.45; gv.add(wheel);
+  const rim = new THREE.Mesh(new THREE.TorusGeometry(0.3, 0.025, 8, 28), mat(0x8a2e24, 0.5, 0.3, 0.05)); rim.rotation.x = Math.PI / 2; wheel.add(rim);
+  for (let k = 0; k < 5; k++) { const a = k / 5 * Math.PI * 2; beam(wheel, mat(0x8a2e24, 0.5, 0.3), V(0, 0, 0), V(Math.cos(a) * 0.3, 0, Math.sin(a) * 0.3), 0.025, 0.025); }
+  // check valve (terugslagklep) with a weighted lever that lifts with the flow
+  const cv = new THREE.Group(); cv.position.set(1.7, DY, DZ); scene.add(cv);
+  box(cv, ironDark, -0.25, 0.25, -0.38, 0.42, -0.38, 0.38);
+  box(cv, ironDark, -0.3, 0.3, 0.42, 0.5, -0.43, 0.43);
+  for (const x of [-0.24, 0, 0.24]) for (const z of [-0.37, 0.37]) cyl(cv, bolt, V(x, 0.45, z), V(x, 0.56, z), 0.016, 6);
+  const lever = new THREE.Group(); lever.position.set(0, 0.1, -0.42); cv.add(lever);
+  beam(lever, ironDark, V(0, 0, 0), V(-0.85, 0, 0), 0.04, 0.06);
+  const weight = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.11, 0.16, 14), ironDark); weight.rotation.x = Math.PI / 2; weight.position.x = -0.8; lever.add(weight);
+  // dismantling joint and concrete saddles in the dike
+  cyl(scene, ironDark, V(5.3, -2.15, DZ), V(5.75, -2.15, DZ), pipeR + 0.07, 20);
+  for (const x of [5.3, 5.75]) flange(V(x, -2.15, DZ), V(1, 0, 0), pipeR + 0.07, ironDark, 12);
+  for (const x of [4.4, 7.0, 9.6, 12.2]) { box(scene, conc, x - 0.35, x + 0.35, PIT, -2.42, DZ - 0.5, DZ + 0.5);
+    beam(scene, ironDark, V(x, -2.15, DZ - 0.36), V(x, -2.15, DZ + 0.36), 0.08, 0.04); }
+  // wall sleeve where the discharge leaves the engine room
+  ring(scene, conc, V(EW[1] - 0.17, F + 0.1, DZ), V(1, -0.55, 0), pipeR, pipeR + 0.18, 0.4, 20);
+
+  // suction: strainer in the tocht, up under the yard, rising inside the west wall, into the eye of the pump
+  const SR = 0.27;
+  pipeRun([V(-5.2, PW - 0.7, 0), V(-2.0, PG - 0.55, 0), V(-2.0, C.y, 0), V(-2.0, C.y, 1.35), V(C.x, C.y, 1.35), V(C.x, C.y, C.z + 0.3)], SR, iron, 0.55, 1.8);
+  for (let k = 0; k < 16; k++) { const a = k / 16 * Math.PI * 2;
+    cyl(scene, iron, V(-5.2 + Math.cos(a) * 0.55, PW - 1.25, Math.sin(a) * 0.55), V(-5.2 + Math.cos(a) * 0.32, PW - 0.75, Math.sin(a) * 0.32), 0.012, 4); }
+  ring(scene, iron, V(-5.2, PW - 1.25, 0), V(0, 1, 0), 0.5, 0.6, 0.04, 24);
+  for (const x of [-4.2, -3.2]) { const y = PW - 0.7 + (x + 5.2) / 3.2 * (PG - 0.55 - PW + 0.7); box(scene, conc, x - 0.25, x + 0.25, PIT, y - 0.27, -0.4, 0.4); }
+  for (const y of [C.y - 0.6, C.y - 1.4]) beam(scene, ironDark, V(-2.38, y, -0.3), V(-2.38, y, 0.3), 0.06, 0.06);   // wall brackets
+  // priming: a small vacuum pump draws the air out of the volute before the main motor starts
+  const pp = new THREE.Group(); pp.position.set(-1.6, F, -1.75); scene.add(pp);
+  box(pp, conc, -0.35, 0.35, 0, 0.15, -0.3, 0.3);
+  const ppm = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, 0.38, 18), mat(0x41584c, 0.45, 0.4, 0.05)); ppm.rotation.x = Math.PI / 2; ppm.position.set(0, 0.36, -0.08); pp.add(ppm);
+  const ppBody = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.14, 0.18, 16), ironDark); ppBody.rotation.x = Math.PI / 2; ppBody.position.set(0, 0.36, 0.22); pp.add(ppBody);
+  const ppFan = new THREE.Group(); ppFan.position.set(-1.6, F + 0.36, -1.75 - 0.29); scene.add(ppFan);
+  for (let k = 0; k < 4; k++) { const bl = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.13, 0.01), bolt); bl.geometry.translate(0, 0.065, 0); bl.rotation.z = k * Math.PI / 2; ppFan.add(bl); }
+  const air = [V(C.x, C.y + RV + 0.02, C.z), V(C.x, C.y + RV + 0.35, C.z), V(-1.6, C.y + RV + 0.35, C.z), V(-1.6, C.y + RV + 0.35, -1.53), V(-1.6, F + 0.5, -1.53)];
+  pipeRun(air, 0.03, copper, 0.12, 9, false);
+  cyl(scene, copper, V(C.x, C.y + RV, C.z), V(C.x, C.y + RV + 0.12, C.z), 0.06, 10);              // air cock on the volute
+  pipeRun([V(-1.6, F + 0.36, -1.53), V(-1.85, F + 0.36, -1.53), V(-1.85, F + 1.7, -1.53), V(-2.6, F + 1.7, -1.53)], 0.035, copper, 0.12, 9, false);
+  const primePuff = ctx.smoke({ pos: V(-2.65, F + 1.7, -1.53), count: 40, rate: () => primeRate, life: 1.2, size0: 0.1, size1: 0.6, color: 0xffffff, opacity: 0.5, vel: V(-1.2, 0.4, 0), gravity: 2, drift: 0, spread: 0.2, jitter: 0.2 });
+  // drain from the bottom of the volute to a floor gully
+  pipeRun([V(C.x - 0.2, C.y - RV + 0.05, C.z + 0.1), V(C.x - 0.2, F + 0.08, C.z + 0.1), V(C.x - 0.9, F + 0.08, C.z + 0.1)], 0.035, iron, 0.1, 9, false);
+  box(scene, ironDark, C.x - 1.15, C.x - 0.85, F - 0.01, F + 0.01, C.z - 0.05, C.z + 0.25);
+  // float well in the intake basin: the level is wired to a dial on the west wall
+  cyl(scene, iron, V(-4.4, PW - 1.1, -1.7), V(-4.4, PG + 0.9, -1.7), 0.16, 16);
+  const floatRod = new THREE.Group(); floatRod.position.set(-4.4, PG + 0.9, -1.7); scene.add(floatRod);
+  cyl(floatRod, mat(0xc8c8c0, 0.3, 0.9), V(0, -0.2, 0), V(0, 0.5, 0), 0.015, 6);
+  const fdisc = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.03, 12), mat(0xb03a2e)); fdisc.position.y = 0.5; floatRod.add(fdisc);
+  const wireG = new THREE.BufferGeometry().setFromPoints([V(-4.4, PG + 1.4, -1.7), V(-2.45, F + 2.6, -1.7)]);
+  scene.add(new THREE.Line(wireG, new THREE.LineBasicMaterial({ color: 0x333333 })));
+  box(scene, white, -2.48, -2.42, F + 1.4, F + 2.5, -1.95, -1.45);
+  for (let k = 0; k <= 10; k++) box(scene, mat(0x111111), -2.5, -2.48, F + 1.45 + k * 0.1, F + 1.46 + k * 0.1, -1.9, -1.78);
+  const pointer = new THREE.Mesh(new THREE.ConeGeometry(0.035, 0.12, 6), mat(0xb03a2e)); pointer.rotation.z = Math.PI / 2; scene.add(pointer);
   // gauges: vacuum on the suction, pressure on the discharge
   const gauge = (p, rot) => { const g = new THREE.Group(); g.position.copy(p); g.rotation.y = rot; scene.add(g);
     const face = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.11, 0.04, 20), white); face.rotation.x = Math.PI / 2; g.add(face);
@@ -296,7 +381,7 @@ function build(ctx) {
   const flap = new THREE.Group(); flap.position.set(16.55, BW - 0.7 + pipeR + 0.12, 0); scene.add(flap);
   const disc = new THREE.Mesh(new THREE.CylinderGeometry(pipeR + 0.12, pipeR + 0.12, 0.08, 24), ironDark);
   disc.rotation.z = Math.PI / 2; disc.position.y = -(pipeR + 0.12); flap.add(disc);
-  const spray = ctx.smoke({ pos: V(16.9, BW + 0.05, 0), count: 90, rate: () => 30 * motor.v, life: 1.2, size0: 0.25, size1: 1.4, color: 0xffffff, opacity: 0.45,
+  const spray = ctx.smoke({ pos: V(16.9, BW + 0.05, 0), count: 90, rate: () => 30 * motor.v * valve.v, life: 1.2, size0: 0.25, size1: 1.4, color: 0xffffff, opacity: 0.45,
     vel: V(1.4, 0.7, 0), gravity: 2.2, drift: 0, spread: 1.0, jitter: 0.35 });
   const boil = new THREE.Mesh(new THREE.CircleGeometry(1.6, 24), new THREE.MeshBasicMaterial({ color: 0xe9eee8, transparent: true, opacity: 0 }));
   boil.rotation.x = -Math.PI / 2; boil.position.set(18.2, BW + 0.02, 0); scene.add(boil);
@@ -342,22 +427,72 @@ function build(ctx) {
   cyl(buoy, mat(0xe6c229, 0.5, 0.1, 0.05), V(0, -0.2, 0), V(0, 0.35, 0), 0.25, 14); cyl(buoy, mat(0x222222), V(0, 0.35, 0), V(0, 0.9, 0), 0.03, 6);
   const blink = new THREE.Mesh(new THREE.SphereGeometry(0.06, 8, 6), new THREE.MeshBasicMaterial({ color: 0x55ff88 })); blink.position.y = 0.95; buoy.add(blink);
 
+  // ---------------------------------------------------------------- fog and a distant thunderstorm
+  const FOG = new THREE.Color(0xb3bbbe), FLASH = new THREE.Color(0xe9eef8);
+  scene.fog = new THREE.FogExp2(FOG.clone(), 0.017); scene.background = FOG.clone(); ctx.sky.visible = false;
+  scene.environmentIntensity = 0.55; ctx.sunLight.intensity = 0.9; ctx.sunLight.color.set(0xdfe5ea);
+  for (const w of ctx.waters) { w.material.uniforms.sunColor.value.set(0x3a3a3a); w.material.uniforms.distortionScale.value = 0.15; }
+  const flashLight = new THREE.HemisphereLight(0xdfe8ff, 0x8090a0, 0); scene.add(flashLight);
+  const groundLight = new THREE.PointLight(0xcfdcff, 0, 120, 1.2); scene.add(groundLight);
+  const boltMat = new THREE.MeshBasicMaterial({ color: 0xf4f6ff, transparent: true, opacity: 0, fog: false, depthWrite: false });
+  const glowMat = new THREE.MeshBasicMaterial({ color: 0x7f8cff, transparent: true, opacity: 0, fog: false, depthWrite: false });
+  let strike = null, nextStrike = 4 + rand(0, 5), strikeT = -1, withBolt = true;
+  const makeBolt = () => {
+    if (strike) { scene.remove(strike); strike.traverse(m => m.geometry && m.geometry.dispose()); }
+    const cam = ctx.camera.position, tgt = ctx.controls.target;
+    let base = null;
+    for (let k = 0; k < 30 && !base; k++) {        // pick a strike point that is on screen, out in the fields
+      const p = V(rand(-0.6, 0.85), rand(0.0, 0.45), 0.5).unproject(ctx.camera), dir = p.sub(cam).normalize();
+      if (dir.y > -0.02) continue;
+      const b = cam.clone().addScaledVector(dir, (PG - cam.y) / dir.y);
+      const dc = Math.hypot(b.x - cam.x, b.z - cam.z);
+      if (Math.hypot(b.x - 0.5, b.z - 3) > 14 && dc > 45 && dc < 320) base = b;
+    }
+    if (!base) { const f = tgt.clone().sub(cam).setY(0).normalize(); base = cam.clone().addScaledVector(f, rand(90, 160)).add(V(rand(-40, 40), 0, 0)).setY(PG); }
+    strike = new THREE.Group(); scene.add(strike); groundLight.position.copy(base).setY(PG + 6);
+    const branch = (p0, len, dir, r, depth) => {
+      const pts = [p0.clone()]; let p = p0.clone();
+      for (let i = 0; i < 14; i++) { p = p.clone().add(V(dir.x * len / 14 + rand(-1, 1) * len * 0.05, -len / 14, dir.z * len / 14 + rand(-1, 1) * len * 0.05)); pts.push(p); }
+      const curve = new THREE.CatmullRomCurve3(pts, false, 'catmullrom', 0.1);
+      strike.add(new THREE.Mesh(new THREE.TubeGeometry(curve, 60, r, 5, false), boltMat));
+      strike.add(new THREE.Mesh(new THREE.TubeGeometry(curve, 30, r * 2.4, 6, false), glowMat));
+      if (depth > 0) for (let k = 0; k < 2; k++) { const at = pts[3 + Math.floor(rand(0, 8))]; branch(at, len * rand(0.25, 0.45), V(rand(-0.6, 0.6), 0, rand(-0.6, 0.6)), r * 0.5, depth - 1); }
+    };
+    branch(base.clone().setY(PG + 150), 150, V(rand(-0.15, 0.15), 0, rand(-0.15, 0.15)), 0.32, 2);
+  };
+  const flashCurve = (u) => u < 0.07 ? 1 : u < 0.13 ? 0.15 : u < 0.3 ? 0.9 : u < 0.36 ? 0.3 : u < 0.42 ? 0.6 : Math.max(0, 1 - (u - 0.42) / 0.5) * 0.4;
+  ctx.add((dt) => {
+    nextStrike -= dt;
+    if (nextStrike <= 0) { withBolt = Math.random() < 0.7; if (withBolt) makeBolt(); strikeT = 0; nextStrike = rand(9, 24); }
+    let f = 0;
+    if (strikeT >= 0) { strikeT += dt; const u = strikeT / 1.1; if (u > 1) strikeT = -1; else f = flashCurve(u); }
+    flashLight.intensity = f * 1.4; groundLight.intensity = withBolt ? f * 1500 : 0;
+    scene.background.copy(FOG).lerp(FLASH, f * 0.55); scene.fog.color.copy(scene.background);
+    boltMat.opacity = withBolt ? Math.min(1, f * 1.4) : 0; glowMat.opacity = withBolt ? f * 0.22 : 0;
+  });
+
   // ---------------------------------------------------------------- the pumping cycle
-  motor = new Eased(0.5, 0.35);
+  motor = new Eased(0.5, 0.35); const prime = new Eased(2.5, 2.5); valve = new Eased(0.6, 0.6);
   const CYCLE = 75, T0 = +new URLSearchParams(location.search).get('t0') || 0;
-  let ang = 0, flapA = 0;
+  let ang = 0, flapA = 0, ppAng = 0, level = 0;
   return {
     update(dt, t) {
-      const c = (t + T0) % CYCLE, on = c > 3 && c < 52;
-      motor.step(on ? 1 : 0, dt);
+      const c = (t + T0) % CYCLE, priming = c > 2 && c < 10, on = c > 9 && c < 54;
+      prime.step(priming ? 1 : 0, dt); motor.step(on ? 1 : 0, dt);
       const v = motor.v;
       ang += dt * v * 11; spin.rotation.z = ang; fan.rotation.z = ang;
-      flapA += ((v > 0.25 ? 0.75 * Math.min(1, v * 1.2) : 0) - flapA) * Math.min(1, dt * 3);
+      ppAng += dt * prime.v * 30; ppFan.rotation.z = ppAng; primeRate = c > 7 && c < 10 ? 25 : 0;
+      const vOpen = c > 12 && c < 50 ? 1 : 0, before = valve.v; valve.step(vOpen, dt);
+      wheel.rotation.y += (valve.v - before) * 40; spindle.position.y = valve.v * 0.35;
+      lever.rotation.z = -0.7 * Math.min(1, v * valve.v * 1.3);
+      level += ((on && v > 0.5 ? -0.12 : 0.06) * dt / 30); level = Math.max(-0.12, Math.min(0, level));
+      floatRod.position.y = PG + 0.9 + level * 3; pointer.position.set(-2.52, F + 2.0 + level * 4, -1.72);
+      flapA += ((v * valve.v > 0.25 ? 0.75 * Math.min(1, v * valve.v * 1.2) : 0) - flapA) * Math.min(1, dt * 3);
       flap.rotation.z = flapA;
-      boil.material.opacity = 0.4 * v; boil.scale.setScalar(0.8 + 0.3 * Math.sin(t * 5) * v);
+      boil.material.opacity = 0.4 * v * valve.v; boil.scale.setScalar(0.8 + 0.3 * Math.sin(t * 5) * v);
       swirl.material.opacity = 0.5 * v; swirl.rotation.z = -t * 4; swirl.scale.setScalar(1 + 0.4 * Math.sin(t * 3));
       amm.rotation.z = 1.1 - 2.0 * v + 0.03 * Math.sin(t * 13) * v; volt.rotation.z = 1.1 - 1.6 * (on ? 1 : v * 0.98);
-      gVac.rotation.z = 1.0 - 1.2 * v; gPres.rotation.z = 1.0 - 1.5 * v;
+      gVac.rotation.z = 1.0 - 1.2 * v; gPres.rotation.z = 1.0 - (0.6 + 0.9 * valve.v) * v;
       handle.rotation.z = on ? 0 : 0.8;
       lamp.material.emissiveIntensity = on ? 2.2 : 0;
       blink.visible = Math.sin(t * 4) > 0.6;
