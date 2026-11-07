@@ -30,6 +30,7 @@ start({
            ['Source', 'Noord-Hollands Archief, Provinciale Atlas Noord-Holland, coll. 122, inv. 307'],
            ['Licence', 'Public domain (PDM 1.0)']],
     link: 'https://noord-hollandsarchief.nl/beelden/beeldbank/detail/FF4DC23EFB8E11DF9E4D523BC2E286E2',
+    drawings: [{src: "https://images.memorix.nl/ranh/thumb/1920x1080/b27b138c-fe6e-4387-c488-3bf24f7e8445.jpg", thumb: "https://images.memorix.nl/ranh/thumb/640x480/b27b138c-fe6e-4387-c488-3bf24f7e8445.jpg", caption: "Scheprad watermolen, Schermerhorn 1816. Noord-Hollands Archief, coll. 122, inv. 307"}],
   },
   panel: { title: 'Scheprad watermolen', sub: 'Schermerhorn, 1816 · drag to orbit, scroll to zoom',
     note: 'The sails turn the paddle wheel through two gear stages. Its paddles scoop polder water up about 1.2 m into the Schermer boezem. The thatch on the near side is cut away so you can see the mechanism.' },
@@ -37,6 +38,7 @@ start({
   buttons: [{ key: 'brake', label: 'Brake (vang)', pressed: false, warn: true },
             { key: 'cut', label: 'Cutaway', pressed: true, onToggle: (on) => mill.setCutaway(on) },
             { key: 'cloth', label: 'Sailcloth', pressed: true, onToggle: (on) => mill.rotor.traverse(o => { if (o.isMesh && o.material === M.cloth()) o.visible = on; }) }],
+  weather: {kind: 'rain'},
   camera: { pos: [-27, 8, 30], target: [-4.6, 4.5, -5.8], max: 220 },
   shadowSize: 30,
   waters: [
@@ -146,6 +148,9 @@ function build(ctx) {
   const sails = new Eased(0.8, 1.2, 2.6);
   let angle = 0, wheelOmega = 0;
   const RATIO_LOW = 12 / 60;                                       // onderbonkelaar staves : waterwiel cogs
+  // ---------------- section: the dike and the near race wall cut away, down past the wheel pit
+  ctx.section({ x: [-14, 14], z: [RACE_Z + 0.37, 9], bottom: -2.6, maxY: 1.06, keep: [mill.group, axle],
+    faces: [[[-14, RACE_Z + 0.37], [-14, 9]], [[14, RACE_Z + 0.37], [14, 9]], [[-14, 9], [14, 9]]] });
   return {
     update(dt, t) {
       const om = sails.step(ctx.state.brake ? 0 : sailOmega(ctx.state.wind), dt, ctx.state.brake);

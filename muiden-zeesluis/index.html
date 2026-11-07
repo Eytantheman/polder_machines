@@ -31,11 +31,13 @@ start({
            ['Source', 'Noord-Hollands Archief, Provinciale Atlas Noord-Holland, coll. 122, inv. 359'],
            ['Place', 'Muiden']],
     link: 'https://noord-hollandsarchief.nl/beelden/beeldbank/detail/9487D8375977473BBD86AF30E3403B6D',
+    drawings: [{src: "https://images.memorix.nl/ranh/thumb/1920x1080/9e03e2e8-86ad-45ba-1cbe-f8582e5b6944.jpg", thumb: "https://images.memorix.nl/ranh/thumb/640x480/9e03e2e8-86ad-45ba-1cbe-f8582e5b6944.jpg", caption: "Zeesluis te Muiden. Noord-Hollands Archief, coll. 122"}],
   },
   panel: { title: 'Zeesluis Muiden', sub: 'Zuiderzee / Vecht · drag to orbit, scroll to zoom',
     note: 'A fishing botter locks through from the Zuiderzee into the Vecht. The sea gates close, the chamber drains to river level, the bridge lifts, and the inner gates open. The wind shapes the sea and the sailing.' },
   controls: [{ key: 'wind', label: 'Wind speed', min: 0, max: 20, step: 0.1, value: 8, unit: 'm/s', hint: beaufort }],
   buttons: [{ label: 'Operate lock now', onClick: () => seq.trigger() }],
+  weather: {kind: 'sun'},
   camera: { pos: [-30, 12, 26], target: [-5.4, 1.5, -3.7], max: 400 },
   shadowSize: 40,
   waters: [
@@ -157,6 +159,10 @@ function build(ctx) {
   A.cyclists(ctx, [[21, 0, 8], [21, 0, 300]], TOP + 0.45, 3, 4.5);
   A.cyclists(ctx, [[21, 0, -300], [21, 0, -8]], TOP + 0.45, 2, 4.5, { cargo: true });
 
+  // ---------------- section: the quay beside the chamber cut away, showing the sheet piling and the floor
+  for (const m of [chamber, outerCh, riverCh]) { m.material = m.material.clone(); m.material.transparent = true; m.material.opacity = 0.5; m.material.depthWrite = false; }
+  ctx.section({ x: [-XG - 6, XG + 9], z: [HW + 0.31, 14], bottom: -3.2, maxY: TOP + 0.5,
+    faces: [[[-XG - 6, HW + 0.31], [-XG - 6, 14]], [[XG + 9, HW + 0.31], [XG + 9, 14]], [[-XG - 6, 14], [XG + 9, 14]]] });
   return {
     update(dt, t) {
       seq.update(dt);

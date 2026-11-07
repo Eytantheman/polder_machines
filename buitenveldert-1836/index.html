@@ -30,12 +30,14 @@ start({
            ['Source', 'Noord-Hollands Archief, Provinciale Atlas Noord-Holland, coll. 122, inv. 377'],
            ['Licence', 'Public domain (PDM 1.0)']],
     link: 'https://noord-hollandsarchief.nl/beelden/beeldbank/detail/FF4CCF0AFB8E11DF9E4D523BC2E286E2',
+    drawings: [{src: "https://images.memorix.nl/ranh/thumb/1920x1080/f6fc8219-b52f-2cee-f84a-dbbf18ba01ea.jpg", thumb: "https://images.memorix.nl/ranh/thumb/640x480/f6fc8219-b52f-2cee-f84a-dbbf18ba01ea.jpg", caption: "Vijzelmolen, Buitenveldert 1836. Noord-Hollands Archief, coll. 122, inv. 377"}],
   },
   panel: { title: 'Middelste watermolen', sub: 'Buitenveldert, 1836 · drag to orbit, scroll to zoom',
     note: 'In 1836 this mill’s paddle wheel was replaced by a three-flight screw, which can lift water higher. The polder it drained is now Buitenveldert and the Zuidas. Aircraft landing on the Buitenveldertbaan still pass overhead.' },
   controls: [{ key: 'wind', label: 'Wind speed', min: 0, max: 20, step: 0.1, value: 7, unit: 'm/s', hint: beaufort }],
   buttons: [{ key: 'brake', label: 'Brake (vang)', pressed: false, warn: true },
             { key: 'cut', label: 'Cutaway', pressed: true, onToggle: (on) => mill.setCutaway(on) }],
+  weather: {kind: 'sun'},
   camera: { pos: [24, 6.5, 30], target: [-1.6, 3.2, 3.8], max: 400 },
   shadowSize: 32,
   fog: { color: 0xc9d2d8, near: 300, far: 2600 },
@@ -138,6 +140,10 @@ function build(ctx) {
   const sails = new Eased(0.8, 1.2, 2.6);
   let angle = 0, screwOmega = 0;
   const RATIO_LOW = 40 / 30;                                     // spur wheel cogs : screw wheel cogs
+  // ---------------- section: the dike beside the screw race cut away, so the lower half of the screw shows
+  const fnd = new THREE.Mesh(new THREE.CylinderGeometry(4.6, 4.9, 3.0, 8), M.brick()); fnd.position.set(0, -1.9, 0); fnd.rotation.y = Math.PI / 8; fnd.castShadow = true; scene.add(fnd);
+  ctx.section({ x: [-6, 14], z: [1.0, 10], bottom: -3.4, maxY: 1.5, keep: [mill.group, screwPivot, fnd],
+    faces: [[[-6, 1.0], [-6, 10]], [[14, 1.0], [14, 10]], [[-6, 10], [14, 10]]] });
   return {
     update(dt, t) {
       const om = sails.step(ctx.state.brake ? 0 : sailOmega(ctx.state.wind, 12), dt, ctx.state.brake);

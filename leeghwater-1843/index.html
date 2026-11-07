@@ -31,6 +31,7 @@ start({
            ['Source', 'Noord-Hollands Archief, Provinciale Atlas Noord-Holland, coll. 122, inv. 96'],
            ['Licence', 'Public domain']],
     link: 'https://noord-hollandsarchief.nl/beelden/beeldbank/detail/D1AA71A93C2B42C484CA740FC53DD118',
+    drawings: [{src: "https://images.memorix.nl/ranh/thumb/1920x1080/6f5fdb5b-045a-449f-4e7a-98e77d92abde.jpg", thumb: "https://images.memorix.nl/ranh/thumb/640x480/6f5fdb5b-045a-449f-4e7a-98e77d92abde.jpg", caption: "Stoomgemaal Leeghwater, 1843. Noord-Hollands Archief, coll. 122, inv. 96"}],
   },
   panel: { title: 'De Leeghwater', sub: 'Haarlemmermeer, 1843 · drag to orbit, scroll to zoom',
     note: 'One huge steam cylinder lifts the central cap, which rocks eleven balance beams. Each stroke, the pumps lift lake water up into the ring canal (Ringvaart). With the cutaway on, part of the tower wall is removed so you can see the cylinder.' },
@@ -39,6 +40,7 @@ start({
     { key: 'wind', label: 'Wind speed', min: 0, max: 20, step: 0.1, value: 7, unit: 'm/s', hint: beaufort }],
   buttons: [{ key: 'stop', label: 'Stop engine', pressed: false, warn: true },
             { key: 'cut', label: 'Cutaway', pressed: true, onToggle: (on) => { towerFront.visible = !on; } }],
+  weather: {kind: 'storm'},
   camera: { pos: [-44, 17, 42], target: [-5.5, 8, -5.8], max: 300 },
   shadowSize: 40,
   waters: [
@@ -161,6 +163,12 @@ function build(ctx) {
   let phase = 0, prevLift = 0, volume = 0;
   const STROKE = 3.0;                                                    // piston stroke (m)
   const inner = R_PIVOT - R_CAP + 0.1, outer = R_PUMP - R_PIVOT;
+  // ---------------- section: the dike opened on the lake side, down past the pump barrels
+  const fnd = new THREE.Mesh(new THREE.CylinderGeometry(R_TOWER + 0.5, R_TOWER + 0.9, DIKE + 3.6, 48, 1, true), mat(0x9a8f80, 0.9, 0, 0.3, 3, { side: THREE.DoubleSide }));
+  fnd.position.y = (DIKE - 3.6) / 2; scene.add(fnd);
+  basin.material = basin.material.clone(); basin.material.transparent = true; basin.material.opacity = 0.5; basin.material.depthWrite = false;
+  ctx.section({ x: [-26, 0], z: [0, 26], bottom: -3.6, maxY: DIKE + 0.05, keep: [fnd],
+    faces: [[[-26, 26], [0, 26]], [[0, 0], [0, 26]], [[-26, 0], [0, 0]]] });
   return {
     update(dt, t) {
       const spm = engine.step(ctx.state.stop ? 0 : ctx.state.steam, dt, ctx.state.stop);

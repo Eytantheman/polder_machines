@@ -44,10 +44,12 @@ start({
            ['Project', 'Renovation and extension of the Gemeenlandshuis, bestek 241 (1931–1933)'],
            ['Source', 'Hoogheemraadschap van Delfland, archive 116 (Technische Dienst), I-A1-5-2']],
     link: 'https://www.archieven.nl/nl/search-modonly?mivast=143&mizig=210&miadt=143&miview=ldt&milang=nl&misort=last_mod%7Casc&micode=116&minr=895340',
+    drawings: [{src: "../common/drawings/delft-1931.jpg", thumb: "../common/drawings/delft-1931-thumb.jpg", caption: "Detailteekening doorsnede kap secretariegebouw, blad 33. H. van der Kloot Meyburg, 1931. Hoogheemraadschap van Delfland, archief 116"}],
     linkText: 'View the original drawing at archieven.nl',
   },
   panel: { title: 'Secretariegebouw', sub: 'Delft, 1931' },
   controls: [], buttons: [],
+  weather: {kind: 'rain'},
   camera: { pos: [2, 28, -40], target: [-7, 6, 6], max: 500 },
   shadowSize: 48,
   fog: { color: 0xc9d2d8, near: 260, far: 1800 },
@@ -306,6 +308,16 @@ function build(ctx) {
   // ---------------------------------------------------------------- the cycle: slates lift, the structure shows, slates return
   const ease = (u) => u < 0 ? 0 : u > 1 ? 1 : u * u * (3 - 2 * u);
   const CYCLE = 34, T0 = +new URLSearchParams(location.search).get('t0') || 0;
+  // ---------------------------------------------------------------- section: the street opened in front of the building, down to the piles
+  const fnd = new THREE.Group(); scene.add(fnd);
+  box(fnd, brick, -12, 11, -2.2, 0, 0, 0.5);                                              // foundation wall under the front
+  box(fnd, brick, -12.2, 11.2, -2.45, -2.2, -0.3, 0.8);                                   // stepped footing
+  box(fnd, oak, -12.3, 11.3, -2.6, -2.45, -0.4, 0.9);                                     // timber sill (kesp) on the pile heads
+  box(fnd, brick, -1.6, 1.6, -1.2, 0, -1.0, 0);                                           // under the front steps
+  const pileM = mat(0x6b5236, 0.9, 0, 0.35, 4);
+  for (let x = -11.6; x <= 10.8; x += 1.2) for (const z of [-0.15, 0.6]) cyl(fnd, pileM, [x, -2.6, z], [x, -4.6, z], 0.13, 8);
+  ctx.section({ x: [-12, 11], z: [-6.0, -0.05], bottom: -4.6, maxY: 0.2, keep: [fnd],
+    faces: [[[-12, -6.0], [11, -6.0]], [[-12, -6.0], [-12, -0.05]], [[11, -6.0], [11, -0.05]]] });
   return {
     update(dt, t) {
       const c = (t + T0 + 4) % CYCLE;

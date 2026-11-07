@@ -149,6 +149,21 @@ canvas { display:block; }
 #meta .orig { font-size:clamp(15px, 1.5vw, 20px); font-style:italic; font-weight:400; margin:0 0 14px; opacity:.95; }
 #meta dl { display:grid; grid-template-columns:auto 1fr; gap:4px 16px; margin:0 0 14px; font-size:clamp(13px, 1.2vw, 16px); font-weight:500; }
 #meta dt { opacity:.8; font-weight:400; } #meta dd { margin:0; }
+#meta .data { display:flex; gap:22px; align-items:flex-start; }
+#meta .thumbs { display:flex; gap:10px; flex:none; margin:2px 0 14px; }
+#meta .thumbs button { pointer-events:auto; padding:0; border:1.5px solid rgba(255,255,255,.85); background:#e9e2d0; cursor:zoom-in;
+  width:clamp(92px, 9vw, 132px); height:clamp(92px, 9vw, 132px); overflow:hidden; box-shadow:0 4px 18px rgba(0,0,0,.35); transition:transform .15s; }
+#meta .thumbs button:hover { transform:translateY(-2px) scale(1.03); }
+#meta .thumbs img { width:100%; height:100%; object-fit:cover; display:block; }
+#lightbox { position:fixed; inset:0; z-index:50; background:rgba(12,16,18,.92); display:none; flex-direction:column; align-items:center; justify-content:center;
+  font-family:'IBM Plex Sans', Helvetica, Arial, sans-serif; color:#fff; }
+#lightbox.open { display:flex; }
+#lightbox .frame { max-width:96vw; max-height:86vh; overflow:auto; cursor:zoom-in; }
+#lightbox .frame.zoom { cursor:zoom-out; }
+#lightbox img { display:block; max-width:96vw; max-height:86vh; object-fit:contain; background:#e9e2d0; }
+#lightbox .frame.zoom img { max-width:none; max-height:none; }
+#lightbox .cap { margin-top:12px; font-size:15px; opacity:.85; max-width:90vw; text-align:center; }
+#lightbox .close { position:absolute; top:14px; right:18px; font-size:30px; line-height:1; background:none; border:0; color:#fff; cursor:pointer; opacity:.85; }
 #meta a { pointer-events:auto; color:#fff; font-size:clamp(14px, 1.4vw, 19px); font-weight:500; text-decoration:none; border-bottom:1.5px solid rgba(255,255,255,.7); padding-bottom:1px; }
 #loading { position:absolute; inset:0; display:grid; place-items:center; font-size:13px; color:#fff; text-shadow:0 1px 3px rgba(0,0,0,.4); pointer-events:none; }
 @media (max-height:500px) { #meta dl { display:none; } #meta h2 { font-size:clamp(24px, 3.4vw, 40px); } }
@@ -156,6 +171,7 @@ canvas { display:block; }
   #panel { top:auto; bottom:10px; left:10px; right:10px; width:auto; padding:12px 14px; }
   #panel.min .hide-min { display:none; } #collapse { display:block; }
   #meta { left:14px; right:14px; top:auto; bottom:18px; max-width:none; } #meta dl { display:none; }
+  #meta .thumbs button { width:64px; height:64px; } #meta .thumbs { margin-bottom:10px; }
   #metaScrim { top:auto; bottom:0; width:100vw; height:50vh; background:linear-gradient(rgba(10,20,25,0), rgba(10,20,25,.45)); }
   #nav { left:10px; right:10px; top:10px; max-width:none; justify-content:flex-start; }
 }`;
@@ -174,6 +190,25 @@ const BFT = [[0.3,'0 · Calm'],[1.6,'1 · Light air'],[3.4,'2 · Light breeze'],
   [8.0,'4 · Moderate breeze'],[10.8,'5 · Fresh breeze'],[13.9,'6 · Strong breeze'],[17.2,'7 · Near gale'],[20.8,'8 · Gale']];
 export const beaufort = (v) => 'Beaufort ' + (BFT.find(b => v < b[0]) || BFT[BFT.length - 1])[1];
 
+// ---------------------------------------------------------------- drawing thumbnails and a full-screen viewer
+export function drawingThumbs(list) {
+  if (!list || !list.length) return '';
+  return `<div class="thumbs">${list.map((d, i) => `<button data-i="${i}" title="${(d.caption || 'Original drawing').replace(/"/g, '&quot;')}"><img src="${d.thumb || d.src}" alt="${(d.caption || 'Original drawing').replace(/"/g, '&quot;')}" loading="lazy"></button>`).join('')}</div>`;
+}
+export function initLightbox(list) {
+  if (!list || !list.length) return;
+  const lb = document.createElement('div'); lb.id = 'lightbox';
+  lb.innerHTML = '<button class="close" aria-label="Close">×</button><div class="frame"><img alt=""></div><div class="cap"></div>';
+  document.body.appendChild(lb);
+  const img = lb.querySelector('img'), cap = lb.querySelector('.cap'), frame = lb.querySelector('.frame');
+  const open = (i) => { const d = list[i]; img.src = d.src; img.alt = d.caption || ''; cap.textContent = d.caption || ''; frame.classList.remove('zoom'); lb.classList.add('open'); };
+  const close = () => lb.classList.remove('open');
+  document.querySelectorAll('#meta .thumbs button').forEach(b => b.addEventListener('click', () => open(+b.dataset.i)));
+  frame.addEventListener('click', (e) => { e.stopPropagation(); frame.classList.toggle('zoom'); });
+  lb.addEventListener('click', close); lb.querySelector('.close').addEventListener('click', close);
+  addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); });
+}
+
 function buildUI(cfg, state) {
   const st = document.createElement('style'); st.textContent = CSS; document.head.appendChild(st);
   const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
@@ -183,7 +218,7 @@ function buildUI(cfg, state) {
     <div id="meta">
       <h2>${m.title}</h2>
       <p class="orig">${esc(m.original)}</p>
-      <dl>${m.rows.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl>
+      <div class="data"><dl>${m.rows.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl>${drawingThumbs(m.drawings)}</div>
       <a href="${m.link}" ${m.link.startsWith('http') ? 'target="_blank" rel="noopener"' : ''}>${m.linkText || 'View the original drawing at noord-hollandsarchief.nl'} &#8599;</a>
     </div>
     <nav id="nav">${SITES.map(s => `<a href="${s.href}"${s.href.includes(cfg.slug) ? ' aria-current="page"' : ''}>${s.label}</a>`).join('')}</nav>
@@ -250,6 +285,7 @@ export function makeWaterNormals(N = 256) {
 export function start(cfg) {
   const state = { wind: 6 };
   buildUI(cfg, state);
+  initLightbox(cfg.meta.drawings);
 
   const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
@@ -261,6 +297,8 @@ export function start(cfg) {
 
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(cfg.fov ?? 40, innerWidth / innerHeight, 0.1, 9000);
+  const camQ = (new URLSearchParams(location.search).get('cam') || '').split(',').map(Number);   // ?cam=x,y,z,tx,ty,tz (testing)
+  if (camQ.length === 6 && camQ.every(isFinite)) { cfg.camera.pos = camQ.slice(0, 3); cfg.camera.target = camQ.slice(3); }
   camera.position.set(...cfg.camera.pos);
   const controls = new OrbitControls(camera, renderer.domElement);
   controls.target.set(...cfg.camera.target);
@@ -291,11 +329,13 @@ export function start(cfg) {
   const waters = (cfg.waters || []).map(w => {
     const geo = new THREE.PlaneGeometry(w.x[1] - w.x[0], w.z[1] - w.z[0]);
     const water = new Water(geo, { textureWidth: 1024, textureHeight: 1024, waterNormals, sunDirection: sun.clone(),
-      sunColor: 0xfff3e0, waterColor: w.color ?? 0x0f2a28, distortionScale: 0.3, fog: !!cfg.fog });
+      sunColor: 0xfff3e0, waterColor: w.color ?? 0x0f2a28, distortionScale: 0.3, fog: !!(cfg.fog || cfg.weather) });
     water.rotation.x = -Math.PI / 2;
     water.position.set((w.x[0] + w.x[1]) / 2, w.y, (w.z[0] + w.z[1]) / 2);
     water.material.uniforms.size.value = w.size ?? 40;
     water.userData = { ...w };
+    const alpha = w.alpha ?? cfg.waterAlpha ?? 0.66;
+    if (alpha < 1) { water.material.transparent = true; water.material.uniforms.alpha.value = alpha; }
     scene.add(water); return water;
   });
   const excl = cfg.exclusions || [];   // [x0,x1,z0,z1] boxes where nothing should float
@@ -311,13 +351,14 @@ export function start(cfg) {
   }
 
   const ctx = { THREE, scene, camera, controls, renderer, sun, sunLight, sky: skyMesh, state, waters, waterAt, updates: [], time: 0, cfg,
-    add(fn) { this.updates.push(fn); return fn; } };
+    add(fn) { this.updates.push(fn); return fn; }, section(o) { return addSection(this, o); } };
   ctx.splash = makeSplashes(ctx);
   ctx.smoke = makeSmokeSystem(ctx);
 
   // page-specific build
   const page = cfg.build(ctx) || {};
 
+  if (cfg.weather) applyWeather(ctx, cfg.weather);
   const amb = cfg.ambient || {};
   if (amb.debris !== false) initDebris(ctx, amb.debrisMax ?? 6);
   if (amb.birds !== false) initBirds(ctx);
@@ -641,4 +682,160 @@ function initWhale(ctx, center) {
     if (!W.blown && hole.y > W.y0 + 0.05) { W.blown = true; blow.pos.copy(hole); blow.acc = 140; }
     if (!W.s2 && u > 0.88) { W.s2 = true; ctx.splash(anchor.clone().setY(W.y0), 3.8); }
   });
+}
+
+
+// ---------------------------------------------------------------- weather: sun, mist, rain, storm (always with some fog)
+export function applyWeather(ctx, w) {
+  const { scene, sunLight } = ctx, kind = w.kind || 'sun';
+  const P = {
+    sun:   { fog: 0xc6d1d9, d: 0.0045, sky: true,  sunI: 1, env: 1, sunCol: null, rain: 0 },
+    mist:  { fog: 0xd3d8da, d: 0.011,  sky: false, sunI: 1.15, env: 0.85, sunCol: 0xfff0dc, rain: 0 },
+    rain:  { fog: 0x9da6ab, d: 0.0125, sky: false, sunI: 0.55, env: 0.55, sunCol: 0xdde4ea, rain: 5000 },
+    storm: { fog: 0x868f95, d: 0.015,  sky: false, sunI: 0.45, env: 0.45, sunCol: 0xd4dce4, rain: 8000 },
+  }[kind];
+  const fogCol = new THREE.Color(w.fog ?? P.fog);
+  scene.fog = new THREE.FogExp2(fogCol.clone(), w.density ?? P.d);
+  if (!P.sky) { ctx.sky.visible = false; scene.background = fogCol.clone(); }
+  scene.environmentIntensity = P.env;
+  sunLight.intensity *= P.sunI; if (P.sunCol) sunLight.color.set(P.sunCol);
+  for (const wt of ctx.waters) if (!P.sky) wt.material.uniforms.sunColor.value.set(kind === 'mist' ? 0x9a9488 : 0x3c3c3c);
+  if (P.rain) {
+    const N = w.drops ?? P.rain, R = 45, H = 32, pos = new Float32Array(N * 6), seeds = new Float32Array(N * 3);
+    for (let i = 0; i < N; i++) { seeds[i * 3] = rand(-R, R); seeds[i * 3 + 1] = rand(0, H); seeds[i * 3 + 2] = rand(-R, R); }
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    const lines = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: 0xd8e0e6, transparent: true, opacity: kind === 'storm' ? 0.42 : 0.34, fog: true }));
+    lines.frustumCulled = false; scene.add(lines);
+    const vy = kind === 'storm' ? 15 : 10, wx = kind === 'storm' ? 3.5 : 1.2, len = 0.055;
+    let fall = 0;
+    ctx.add((dt) => {
+      fall += dt; const c = ctx.camera.position;
+      for (let i = 0; i < N; i++) {
+        const y = ((seeds[i * 3 + 1] - fall * vy) % H + H) % H, x = seeds[i * 3] + (H - y) * wx / vy, z = seeds[i * 3 + 2];
+        const X = c.x + ((x - c.x) % (2 * R) + 3 * R) % (2 * R) - R, Z = c.z + ((z - c.z) % (2 * R) + 3 * R) % (2 * R) - R;
+        const Y = c.y - H * 0.55 + y;
+        pos[i * 6] = X; pos[i * 6 + 1] = Y; pos[i * 6 + 2] = Z;
+        pos[i * 6 + 3] = X + wx * len; pos[i * 6 + 4] = Y + vy * len; pos[i * 6 + 5] = Z;
+      }
+      g.attributes.position.needsUpdate = true;
+    });
+  }
+  if (kind === 'storm') addLightning(ctx, { groundY: w.groundY ?? 0, avoid: w.avoid ?? [0, 0, 14], fog: fogCol });
+}
+
+export function addLightning(ctx, o) {
+  const { scene } = ctx, GY = o.groundY, FOG = o.fog.clone(), FLASH = new THREE.Color(0xe9eef8);
+  const flashLight = new THREE.HemisphereLight(0xdfe8ff, 0x8090a0, 0); scene.add(flashLight);
+  const groundLight = new THREE.PointLight(0xcfdcff, 0, 160, 1.2); scene.add(groundLight);
+  const boltMat = new THREE.MeshBasicMaterial({ color: 0xf4f6ff, transparent: true, opacity: 0, fog: false, depthWrite: false });
+  const glowMat = new THREE.MeshBasicMaterial({ color: 0x7f8cff, transparent: true, opacity: 0, fog: false, depthWrite: false });
+  let strike = null, next = rand(3, 8), t = -1, withBolt = true;
+  const V3 = (x, y, z) => new THREE.Vector3(x, y, z);
+  const make = () => {
+    if (strike) { scene.remove(strike); strike.traverse(m => m.geometry && m.geometry.dispose()); }
+    const cam = ctx.camera.position; let base = null;
+    for (let k = 0; k < 40 && !base; k++) {
+      const dir = V3(rand(-0.6, 0.85), rand(0.0, 0.45), 0.5).unproject(ctx.camera).sub(cam).normalize();
+      if (dir.y > -0.01) continue;
+      const b = cam.clone().addScaledVector(dir, (GY - cam.y) / dir.y), dc = Math.hypot(b.x - cam.x, b.z - cam.z);
+      if (Math.hypot(b.x - o.avoid[0], b.z - o.avoid[1]) > o.avoid[2] && dc > 45 && dc < 340) base = b;
+    }
+    if (!base) { const f = ctx.controls.target.clone().sub(cam).setY(0).normalize(); base = cam.clone().addScaledVector(f, rand(110, 200)).setY(GY); }
+    strike = new THREE.Group(); scene.add(strike); groundLight.position.copy(base).setY(GY + 6);
+    const branch = (p0, len, dir, r, depth) => {
+      const pts = [p0.clone()]; let p = p0.clone();
+      for (let i = 0; i < 14; i++) { p = p.clone().add(V3(dir.x * len / 14 + rand(-1, 1) * len * 0.05, -len / 14, dir.z * len / 14 + rand(-1, 1) * len * 0.05)); pts.push(p); }
+      const curve = new THREE.CatmullRomCurve3(pts, false, 'catmullrom', 0.1);
+      strike.add(new THREE.Mesh(new THREE.TubeGeometry(curve, 60, r, 5, false), boltMat));
+      strike.add(new THREE.Mesh(new THREE.TubeGeometry(curve, 30, r * 2.4, 6, false), glowMat));
+      if (depth > 0) for (let k = 0; k < 2; k++) branch(pts[3 + Math.floor(rand(0, 8))], len * rand(0.25, 0.45), V3(rand(-0.6, 0.6), 0, rand(-0.6, 0.6)), r * 0.5, depth - 1);
+    };
+    branch(base.clone().setY(GY + 150), 150, V3(rand(-0.15, 0.15), 0, rand(-0.15, 0.15)), 0.32, 2);
+  };
+  const curve = (u) => u < 0.07 ? 1 : u < 0.13 ? 0.15 : u < 0.3 ? 0.9 : u < 0.36 ? 0.3 : u < 0.42 ? 0.6 : Math.max(0, 1 - (u - 0.42) / 0.5) * 0.4;
+  ctx.add((dt) => {
+    next -= dt;
+    if (next <= 0) { withBolt = Math.random() < 0.7; if (withBolt) make(); t = 0; next = rand(9, 24); }
+    let f = 0;
+    if (t >= 0) { t += dt; const u = t / 1.1; if (u > 1) t = -1; else f = curve(u); }
+    flashLight.intensity = f * 1.4; groundLight.intensity = withBolt ? f * 1500 : 0;
+    if (ctx.scene.background && ctx.scene.background.isColor) { ctx.scene.background.copy(FOG).lerp(FLASH, f * 0.55); ctx.scene.fog.color.copy(ctx.scene.background); }
+    boltMat.opacity = withBolt ? Math.min(1, f * 1.4) : 0; glowMat.opacity = withBolt ? f * 0.22 : 0;
+  });
+}
+
+// ---------------------------------------------------------------- section: cut the ground open around the machine
+// o: { x:[x0,x1], z:[z0,z1], bottom, maxY, keep:[objects not to cut], extra:[meshes to cut], big: 50 }
+export function addSection(ctx, o) {
+  const { scene, renderer } = ctx;
+  renderer.localClippingEnabled = true;
+  const [x0, x1] = o.x, [z0, z1] = o.z, B = o.bottom, maxY = o.maxY ?? 0.5, big = o.big ?? 50;
+  const planes = [new THREE.Plane(new THREE.Vector3(-1, 0, 0), x0), new THREE.Plane(new THREE.Vector3(1, 0, 0), -x1),
+                  new THREE.Plane(new THREE.Vector3(0, 0, -1), z0), new THREE.Plane(new THREE.Vector3(0, 0, 1), -z1)];
+  const keep = new Set(); for (const k of (o.keep || [])) k && k.traverse(c => keep.add(c));
+  const cut = [], bb = new THREE.Box3();
+  scene.updateMatrixWorld(true);
+  scene.traverse(m => {
+    if (!m.isMesh || m.isInstancedMesh || keep.has(m) || !m.material || Array.isArray(m.material)) return;
+    if (m.material.isShaderMaterial || m.material.transparent || m === ctx.sky) return;
+    bb.setFromObject(m);
+    if (bb.max.x < x0 || bb.min.x > x1 || bb.max.z < z0 || bb.min.z > z1) return;
+    const size = Math.max(bb.max.x - bb.min.x, bb.max.z - bb.min.z);
+    if (bb.max.y <= maxY || size > big || (o.extra || []).includes(m)) cut.push(m);
+  });
+  for (const m of cut) { m.material = m.material.clone(); m.material.clippingPlanes = planes; m.material.clipIntersection = true; }
+  // water sheets that run under the cut are clipped too (Water.js gets the clipping chunks patched in)
+  for (const w of ctx.waters) {
+    const d = w.userData; if (d.x[1] < x0 || d.x[0] > x1 || d.z[1] < z0 || d.z[0] > z1) continue;
+    const m = w.material; m.clipping = true; m.clippingPlanes = planes; m.clipIntersection = true;
+    m.onBeforeCompile = (sh) => {
+      sh.vertexShader = sh.vertexShader.replace('void main() {', '#include <clipping_planes_pars_vertex>\nvoid main() {')
+        .replace('gl_Position = projectionMatrix * mvPosition;', 'gl_Position = projectionMatrix * mvPosition;\n#include <clipping_planes_vertex>');
+      sh.fragmentShader = sh.fragmentShader.replace('void main() {', '#include <clipping_planes_pars_fragment>\nvoid main() {\n#include <clipping_planes_fragment>');
+    };
+    m.needsUpdate = true;
+  }
+  // sample the ground along the cut faces (raycasts ignore clipping, so they find the original surface)
+  const ray = new THREE.Raycaster(), down = new THREE.Vector3(0, -1, 0);
+  const topAt = (x, z) => { ray.set(new THREE.Vector3(x, 60, z), down); ray.far = 120;
+    for (const h of ray.intersectObjects(cut, false)) if (h.point.y <= maxY + 0.01 || true) return Math.max(B, h.point.y); return B; };
+  const C = { top: new THREE.Color(0x8a7756), peat: new THREE.Color(0x5a4430), clay: new THREE.Color(0x8b9089), mud: new THREE.Color(0x3d362c) };
+  const soil = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, side: THREE.DoubleSide });
+  const wmat = new THREE.MeshPhysicalMaterial({ color: 0x3f7f78, transparent: true, opacity: 0.3, roughness: 0.05, depthWrite: false, side: THREE.DoubleSide });
+  const face = (pA, pB) => {
+    const L = Math.hypot(pB[0] - pA[0], pB[1] - pA[1]), n = Math.max(2, Math.ceil(L / 0.25));
+    const pos = [], col = [], idx = [], wpos = [], widx = [];
+    const cols = [];
+    for (let i = 0; i <= n; i++) {
+      const x = pA[0] + (pB[0] - pA[0]) * i / n, z = pA[1] + (pB[1] - pA[1]) * i / n, top = topAt(x, z);
+      const w = ctx.waterAt(x, z), wl = w ? w.position.y : -Infinity, wet = wl > top + 0.02;
+      const lv = [B, Math.max(B, top - 1.45), Math.max(B, top - 1.4), Math.max(B, top - 0.45), Math.max(B, top - 0.4), top];
+      const cl = [C.clay, C.clay, wet ? C.mud : C.peat, wet ? C.mud : C.peat, wet ? C.mud : C.top, wet ? C.mud : C.top];
+      const base = pos.length / 3;
+      lv.forEach((y, k) => { pos.push(x, y, z); col.push(cl[k].r, cl[k].g, cl[k].b); });
+      cols.push({ base, x, z, top, wl, wet });
+    }
+    for (let i = 0; i < n; i++) { const a = cols[i].base, b = cols[i + 1].base;
+      for (let k = 0; k < 5; k++) idx.push(a + k, b + k, b + k + 1, a + k, b + k + 1, a + k + 1); }
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+    g.setIndex(idx); g.computeVertexNormals();
+    const mesh = new THREE.Mesh(g, soil); mesh.receiveShadow = true; scene.add(mesh);
+    for (let i = 0; i < n; i++) { const a = cols[i], b = cols[i + 1]; if (!a.wet && !b.wet) continue;
+      const wl = Math.max(a.wl, b.wl), k = wpos.length / 3;
+      wpos.push(a.x, Math.min(a.top, wl), a.z, b.x, Math.min(b.top, wl), b.z, b.x, wl, b.z, a.x, wl, a.z); widx.push(k, k + 1, k + 2, k, k + 2, k + 3); }
+    if (wpos.length) { const wg = new THREE.BufferGeometry(); wg.setAttribute('position', new THREE.Float32BufferAttribute(wpos, 3)); wg.setIndex(widx); scene.add(new THREE.Mesh(wg, wmat)); }
+  };
+  for (const [a, b] of (o.faces || [[[x0, z0], [x1, z0]], [[x1, z0], [x1, z1]], [[x1, z1], [x0, z1]], [[x0, z1], [x0, z0]]])) face(a, b);
+  const surf = [], STEP = 0.5;
+  for (let x = x0; x < x1 - 1e-6; x += STEP) for (let z = z0; z < z1 - 1e-6; z += STEP) {
+    const cx = Math.min(x + STEP, x1), cz = Math.min(z + STEP, z1), mx = (x + cx) / 2, mz = (z + cz) / 2;
+    const w = ctx.waterAt(mx, mz); if (!w) continue;
+    const wl = w.position.y; if (topAt(mx, mz) >= wl - 0.02) continue;
+    surf.push(x, wl, z, cx, wl, z, cx, wl, cz, x, wl, z, cx, wl, cz, x, wl, cz);
+  }
+  if (surf.length) { const sg = new THREE.BufferGeometry(); sg.setAttribute('position', new THREE.Float32BufferAttribute(surf, 3)); sg.computeVertexNormals();
+    scene.add(new THREE.Mesh(sg, new THREE.MeshStandardMaterial({ color: 0x2c4a48, transparent: true, opacity: 0.5, roughness: 0.06, metalness: 0.35, depthWrite: false, side: THREE.DoubleSide }))); }
+  const fl = new THREE.Mesh(new THREE.BoxGeometry(x1 - x0, 0.1, z1 - z0), new THREE.MeshStandardMaterial({ color: 0x8b9089, roughness: 0.95 }));
+  fl.position.set((x0 + x1) / 2, B - 0.05, (z0 + z1) / 2); fl.receiveShadow = true; scene.add(fl);
+  return { cut, planes };
 }

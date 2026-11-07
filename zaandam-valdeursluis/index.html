@@ -31,11 +31,13 @@ start({
            ['Source', 'Noord-Hollands Archief, Provinciale Atlas Noord-Holland, coll. 122, inv. 271'],
            ['Licence', 'Public domain (PDM 1.0)']],
     link: 'https://noord-hollandsarchief.nl/beelden/beeldbank/detail/FF2C2232FB8E11DF9E4D523BC2E286E2',
+    drawings: [{src: "https://images.memorix.nl/ranh/thumb/1920x1080/b705aab5-4ff2-edf8-4e59-7536111b4327.jpg", thumb: "https://images.memorix.nl/ranh/thumb/640x480/b705aab5-4ff2-edf8-4e59-7536111b4327.jpg", caption: "Valdeursluis, Zaandam. Noord-Hollands Archief, coll. 122"}],
   },
   panel: { title: 'Noorder Valdeursluis', sub: 'Zaan / Schinkeldijk · drag to orbit, scroll to zoom',
     note: 'A valdeur is hinged along its foot. To let a boat through, it is lowered flat onto the lock floor. Afterwards it is wound back up by the chain winches on the brick arches.' },
   controls: [{ key: 'wind', label: 'Wind speed', min: 0, max: 20, step: 0.1, value: 6, unit: 'm/s', hint: beaufort }],
   buttons: [{ label: 'Operate lock now', onClick: () => seq.trigger() }],
+  weather: {kind: 'mist'},
   camera: { pos: [-34, 17, 38], target: [0, 1, -2], max: 400 },
   shadowSize: 40,
   waters: [
@@ -165,6 +167,10 @@ function build(ctx) {
   A.foam(ctx, 23, -22, Y_ZAAN + 0.02, 4);
   A.oilSlick(ctx, 75, -60, Y_ZAAN, 6);
 
+  // ---------------- section: the quay beside the chamber cut away, showing the brick walls and floor
+  scene.traverse(m => { if (m.isMesh && m.material === wm) { m.material = wm.clone(); m.material.transparent = true; m.material.opacity = 0.5; m.material.depthWrite = false; } });
+  ctx.section({ x: [-XH - 2.2, XH + 2.2], z: [HW + 0.61, 12], bottom: -3.3, maxY: TOP + 0.25,
+    faces: [[[-XH - 2.2, HW + 0.61], [-XH - 2.2, 12]], [[XH + 2.2, HW + 0.61], [XH + 2.2, 12]], [[-XH - 2.2, 12], [XH + 2.2, 12]]] });
   return {
     update(dt) { seq.update(dt); chamber.position.set(0, level, 0); },
     readouts: () => [['Lock', seq.label], ['Zaan', Y_ZAAN.toFixed(1) + ' m'], ['Polder canal', Y_CANAL.toFixed(1) + ' m'], ['Chamber', level.toFixed(2) + ' m']],

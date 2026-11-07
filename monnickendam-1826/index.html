@@ -58,6 +58,22 @@
   #nav a[aria-current=page] { background:rgba(255,255,255,.92); color:#1d2124; }
   @media (max-width:640px) { #nav { left:10px; right:10px; top:10px; max-width:none; justify-content:flex-start; } }
   @media (max-height:500px) { #meta dl { display:none; } #meta h2 { font-size:clamp(24px, 3.4vw, 40px); } }
+  #meta .data { display:flex; gap:22px; align-items:flex-start; }
+  #meta .thumbs { display:flex; gap:10px; flex:none; margin:2px 0 14px; }
+  #meta .thumbs button { pointer-events:auto; padding:0; border:1.5px solid rgba(255,255,255,.85); background:#e9e2d0; cursor:zoom-in;
+    width:clamp(92px, 9vw, 132px); height:clamp(92px, 9vw, 132px); overflow:hidden; box-shadow:0 4px 18px rgba(0,0,0,.35); transition:transform .15s; }
+  #meta .thumbs button:hover { transform:translateY(-2px) scale(1.03); }
+  #meta .thumbs img { width:100%; height:100%; object-fit:cover; display:block; }
+  #lightbox { position:fixed; inset:0; z-index:50; background:rgba(12,16,18,.92); display:none; flex-direction:column; align-items:center; justify-content:center;
+    font-family:'IBM Plex Sans', Helvetica, Arial, sans-serif; color:#fff; }
+  #lightbox.open { display:flex; }
+  #lightbox .frame { max-width:96vw; max-height:86vh; overflow:auto; cursor:zoom-in; }
+  #lightbox .frame.zoom { cursor:zoom-out; }
+  #lightbox img { display:block; max-width:96vw; max-height:86vh; object-fit:contain; background:#e9e2d0; }
+  #lightbox .frame.zoom img { max-width:none; max-height:none; }
+  #lightbox .cap { margin-top:12px; font-size:15px; opacity:.85; max-width:90vw; text-align:center; }
+  #lightbox .close { position:absolute; top:14px; right:18px; font-size:30px; line-height:1; background:none; border:0; color:#fff; cursor:pointer; opacity:.85; }
+  @media (max-width:640px) { #meta .thumbs button { width:64px; height:64px; } }
   #loading { position:absolute; inset:0; display:grid; place-items:center; font-size:13px; color:#fff; text-shadow:0 1px 3px rgba(0,0,0,.4); pointer-events:none; }
   #collapse { position:absolute; top:12px; right:12px; border:none; background:none; font-size:16px; cursor:pointer; color:var(--muted); display:none; }
   @media (max-width:640px) {
@@ -72,12 +88,12 @@
 <div id="meta">
   <h2>Vijzel-staartmolentje<br>Monnickendam, 1826</h2>
   <p class="orig">Teekening van een Vijzel-Staart-Molentje gebouwd by Monnickendam, 1826</p>
-  <dl>
+  <div class="data"><dl>
     <dt>Type</dt><dd>Wind-driven Archimedes screw (vijzel) with tail vane (staart)</dd>
     <dt>Drawing</dt><dd>1836, anonymous (the mill was built in 1826)</dd>
     <dt>Source</dt><dd>Noord-Hollands Archief, Provinciale Atlas Noord-Holland, coll. 122, inv. 159</dd>
     <dt>Scale</dt><dd>6 Rijnlandse voeten (drawn scale bar)</dd>
-  </dl>
+  </dl><div class="thumbs"><button data-i="0" title="Teekening van een Vijzel-Staart-Molentje, 1836"><img src="../common/drawings/monnickendam-1826-thumb.jpg" alt="Original drawing"></button></div></div>
   <a href="https://noord-hollandsarchief.nl/beelden/beeldbank/detail/FF5BAC0AFB8E11DF9E4D523BC2E286E2/media/e25a596b-d3c3-6723-fe43-f99b3924b364?mode=detail&amp;view=horizontal" target="_blank" rel="noopener">View the original drawing at noord-hollandsarchief.nl &#8599;</a>
 </div>
 <nav id="nav"><a href="../monnickendam-1826/" aria-current="page">Monnickendam 1826</a><a href="../schermerhorn-1816/">Schermerhorn 1816</a><a href="../leeghwater-1843/">Leeghwater 1843</a><a href="../muiden-zeesluis/">Muiden zeesluis</a><a href="../zaandam-valdeursluis/">Zaandam valdeursluis</a><a href="../buitenveldert-1836/">Buitenveldert 1836</a><a href="../delft-1931/">Delft 1931</a><a href="../mijzen-1920/">Mijzen 1920</a></nav>
@@ -117,6 +133,8 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { Water } from 'three/addons/objects/Water.js';
 import { Sky } from 'three/addons/objects/Sky.js';
+import { initLightbox } from '../common/engine.js';
+initLightbox([{ src: '../common/drawings/monnickendam-1826.jpg', caption: 'Teekening van een Vijzel-Staart-Molentje gebouwd by Monnickendam, 1826 (drawn 1836). Noord-Hollands Archief, coll. 122, inv. 159' }]);
 
 const MODEL_URL = "molentje.glb";
 
@@ -131,6 +149,7 @@ renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 document.body.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
+scene.fog = new THREE.FogExp2(0xc6d1d9, 0.0065);   // a light, sunny haze
 const camera = new THREE.PerspectiveCamera(38, innerWidth / innerHeight, 0.1, 4000);
 camera.position.set(-6.4, 3.4, 10.6);
 const controls = new OrbitControls(camera, renderer.domElement);
@@ -207,12 +226,12 @@ function makeWater(x0, x1, y) {
   const w = new Water(geo, {
     textureWidth: 1024, textureHeight: 1024, waterNormals,
     sunDirection: sun.clone().normalize(), sunColor: 0xfff3e0,
-    waterColor: 0x0f2a28, distortionScale: 2.5, fog: false,
+    waterColor: 0x0f2a28, distortionScale: 2.5, fog: true, alpha: 0.66,
   });
   w.rotation.x = -Math.PI / 2;
   w.position.set((x0 + x1) / 2, y, 0);
   w.material.uniforms.size.value = 40;
-  w.receiveShadow = true;
+  w.receiveShadow = true; w.material.transparent = true;
   scene.add(w);
   return w;
 }
