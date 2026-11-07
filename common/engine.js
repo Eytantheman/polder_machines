@@ -168,6 +168,7 @@ export const SITES = [
   { href: '../zaandam-valdeursluis/', label: 'Zaandam valdeursluis' },
   { href: '../buitenveldert-1836/', label: 'Buitenveldert 1836' },
   { href: '../delft-1931/', label: 'Delft 1931' },
+  { href: '../mijzen-1920/', label: 'Mijzen 1920' },
 ];
 const BFT = [[0.3,'0 · Calm'],[1.6,'1 · Light air'],[3.4,'2 · Light breeze'],[5.5,'3 · Gentle breeze'],
   [8.0,'4 · Moderate breeze'],[10.8,'5 · Fresh breeze'],[13.9,'6 · Strong breeze'],[17.2,'7 · Near gale'],[20.8,'8 · Gale']];
