@@ -136,11 +136,18 @@ canvas { display:block; }
 #panel .toggles button.warn[aria-pressed=true] { background:#9a3b2e; border-color:#9a3b2e; }
 #panel .note { font-size:11px; color:var(--muted); margin-top:12px; line-height:1.4; }
 #collapse { position:absolute; top:12px; right:12px; border:none; background:none; font-size:16px; cursor:pointer; color:var(--muted); display:none; }
-#nav { position:absolute; top:16px; right:16px; display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end; max-width:56vw;
-  font-family:"Helvetica Neue", Helvetica, Arial, sans-serif; }
-#nav a { color:#fff; text-decoration:none; font-size:13px; padding:5px 10px; border-radius:999px; background:rgba(10,20,25,.32);
-  backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px); border:1px solid rgba(255,255,255,.25); }
-#nav a[aria-current=page] { background:rgba(255,255,255,.92); color:#1d2124; }
+#nav { position:absolute; top:16px; right:16px; z-index:20; font-family:'IBM Plex Sans', Helvetica, Arial, sans-serif; }
+#nav .cur { display:flex; align-items:center; gap:10px; font:inherit; font-size:14px; font-weight:500; color:#1d2124; background:rgba(255,255,255,.92);
+  border:0; border-radius:999px; padding:8px 14px 8px 16px; cursor:pointer; box-shadow:0 4px 16px rgba(0,0,0,.18); }
+#nav .cur .lab { opacity:.55; font-weight:400; } #nav .cur .chev { transition:transform .2s; font-size:11px; }
+#nav.open .cur .chev { transform:rotate(180deg); }
+#nav ul { display:none; position:absolute; right:0; top:calc(100% + 8px); list-style:none; margin:0; padding:6px; min-width:260px;
+  background:rgba(250,250,248,.97); border-radius:14px; box-shadow:0 10px 34px rgba(0,0,0,.28); max-height:72vh; overflow:auto; }
+#nav.open ul { display:block; }
+#nav li a { display:flex; justify-content:space-between; gap:14px; padding:9px 12px; border-radius:9px; color:#1d2124; text-decoration:none; font-size:14px; }
+#nav li a:hover, #nav li a:focus-visible { background:rgba(0,0,0,.06); outline:none; }
+#nav li a[aria-current=page] { font-weight:600; } #nav li a[aria-current=page]::after { content:'●'; font-size:9px; align-self:center; color:#2e6f62; }
+#nav li.sep { height:1px; background:rgba(0,0,0,.1); margin:5px 8px; }
 #metaScrim { position:absolute; left:0; bottom:0; width:75vw; height:60vh; pointer-events:none;
   background:radial-gradient(ellipse at 0% 100%, rgba(10,20,25,.42) 0%, rgba(10,20,25,.18) 45%, rgba(10,20,25,0) 72%); }
 #meta { position:absolute; left:28px; bottom:26px; max-width:min(780px, 62vw); pointer-events:none;
@@ -173,7 +180,7 @@ canvas { display:block; }
   #meta { left:14px; right:14px; top:auto; bottom:18px; max-width:none; } #meta dl { display:none; }
   #meta .thumbs button { width:64px; height:64px; } #meta .thumbs { margin-bottom:10px; }
   #metaScrim { top:auto; bottom:0; width:100vw; height:50vh; background:linear-gradient(rgba(10,20,25,0), rgba(10,20,25,.45)); }
-  #nav { left:10px; right:10px; top:10px; max-width:none; justify-content:flex-start; }
+  #nav { right:10px; top:10px; } #nav ul { min-width:230px; }
 }`;
 
 export const SITES = [
@@ -189,6 +196,40 @@ export const SITES = [
 const BFT = [[0.3,'0 · Calm'],[1.6,'1 · Light air'],[3.4,'2 · Light breeze'],[5.5,'3 · Gentle breeze'],
   [8.0,'4 · Moderate breeze'],[10.8,'5 · Fresh breeze'],[13.9,'6 · Strong breeze'],[17.2,'7 · Near gale'],[20.8,'8 · Gale']];
 export const beaufort = (v) => 'Beaufort ' + (BFT.find(b => v < b[0]) || BFT[BFT.length - 1])[1];
+
+// ---------------------------------------------------------------- scene menu (dropdown)
+export function navMenu(slug) {
+  const cur = SITES.find(s => s.href.includes(slug));
+  return `<nav id="nav"><button class="cur" aria-haspopup="true" aria-expanded="false"><span class="lab">Scene</span><span>${cur ? cur.label : 'Scenes'}</span><span class="chev">▼</span></button>
+    <ul role="menu">${SITES.map(s => `<li><a role="menuitem" href="${s.href}"${s.href.includes(slug) ? ' aria-current="page"' : ''}>${s.label}</a></li>`).join('')}
+    <li class="sep"></li><li><a role="menuitem" href="../">All scenes</a></li></ul></nav>`;
+}
+export function initNav() {
+  const nav = document.getElementById('nav'); if (!nav) return;
+  const btn = nav.querySelector('.cur');
+  const set = (o) => { nav.classList.toggle('open', o); btn.setAttribute('aria-expanded', o); };
+  btn.addEventListener('click', (e) => { e.stopPropagation(); set(!nav.classList.contains('open')); });
+  addEventListener('click', (e) => { if (!nav.contains(e.target)) set(false); });
+  addEventListener('keydown', (e) => { if (e.key === 'Escape') set(false); });
+}
+
+// ---------------------------------------------------------------- opening camera move: from a close frame out to the wide view
+export function camIntro(camera, controls, o = {}) {
+  const q = new URLSearchParams(location.search);
+  if (q.has('cam') || q.has('nointro')) return () => {};
+  const dur = o.dur ?? 4.8, near = o.near ?? 0.5, turn = o.turn ?? 0.28, fov1 = camera.fov, fov0 = fov1 * (o.fovScale ?? 0.78);
+  const tgt = controls.target.clone(), s1 = new THREE.Spherical().setFromVector3(camera.position.clone().sub(tgt));
+  const s0 = new THREE.Spherical(s1.radius * near, Math.max(0.2, s1.phi - (o.lift ?? 0.06)), s1.theta + turn);
+  let t = 0, done = false;
+  const ease = (u) => u < 0.5 ? 4 * u * u * u : 1 - Math.pow(-2 * u + 2, 3) / 2;
+  const apply = (e) => {
+    const sp = new THREE.Spherical(s0.radius + (s1.radius - s0.radius) * e, s0.phi + (s1.phi - s0.phi) * e, s0.theta + (s1.theta - s0.theta) * e);
+    camera.position.setFromSpherical(sp).add(tgt); camera.fov = fov0 + (fov1 - fov0) * e; camera.updateProjectionMatrix();
+  };
+  apply(0);
+  controls.addEventListener('start', () => { if (!done) { done = true; camera.fov = fov1; camera.updateProjectionMatrix(); } });
+  return (dt) => { if (done) return; t += dt; const u = Math.min(1, t / dur); apply(ease(u)); if (u >= 1) done = true; };
+}
 
 // ---------------------------------------------------------------- drawing thumbnails and a full-screen viewer
 export function drawingThumbs(list) {
@@ -221,7 +262,7 @@ function buildUI(cfg, state) {
       <div class="data"><dl>${m.rows.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl>${drawingThumbs(m.drawings)}</div>
       <a href="${m.link}" ${m.link.startsWith('http') ? 'target="_blank" rel="noopener"' : ''}>${m.linkText || 'View the original drawing at noord-hollandsarchief.nl'} &#8599;</a>
     </div>
-    <nav id="nav">${SITES.map(s => `<a href="${s.href}"${s.href.includes(cfg.slug) ? ' aria-current="page"' : ''}>${s.label}</a>`).join('')}</nav>
+    ${navMenu(cfg.slug)}
     <div id="loading">Building the scene…</div>
     <div id="panel">
       <button id="collapse" aria-label="Collapse panel">▾</button>
@@ -286,6 +327,7 @@ export function start(cfg) {
   const state = { wind: 6 };
   buildUI(cfg, state);
   initLightbox(cfg.meta.drawings);
+  initNav();
 
   const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
@@ -304,6 +346,7 @@ export function start(cfg) {
   controls.target.set(...cfg.camera.target);
   controls.enableDamping = true; controls.minDistance = cfg.camera.min ?? 3; controls.maxDistance = cfg.camera.max ?? 140;
   controls.maxPolarAngle = Math.PI * 0.495; controls.update();
+  const intro = camIntro(camera, controls, cfg.intro || {});
 
   // sky and image-based light
   const sky = cfg.sky || {};
@@ -385,7 +428,7 @@ export function start(cfg) {
     }
     statT -= dt;
     if (statT <= 0 && page.readouts) { statT = 0.1; stats.innerHTML = page.readouts().map(([k, v]) => `<span>${k}</span><span>${v}</span>`).join(''); }
-    controls.update();
+    intro(dt); controls.update();
     renderer.render(scene, camera);
     requestAnimationFrame(frame);
   }
